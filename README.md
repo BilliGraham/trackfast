@@ -1,8 +1,8 @@
 # Trackfast
 
 Trackfast is a native Rust and egui scaffold for a Toggl Track desktop client.
-It follows Spotifast's architecture and uses the supplied Toggl screenshots as a visual reference.
-The intended GitHub repository is BilliGraham/trackfast. Keep it private.
+The supplied Toggl screenshots are its visual reference.
+The GitHub repository is BilliGraham/trackfast. Keep it private.
 
 ## Current scope
 
@@ -13,36 +13,55 @@ The intended GitHub repository is BilliGraham/trackfast. Keep it private.
 - An always-on-top request for the widget.
 
 Timer controls and project creation are disabled placeholders.
-There is no authentication, network access, timer logic, storage, or Toggl sync.
-No account details or task content from the supplied screenshots are included.
-The interface uses dark surfaces and pink accents. It is not a finished design.
+The standalone timer model supports start, stop, resume, and overlapping tasks.
+The interface does not use the model yet.
+There is no authentication, network access, storage, or Toggl sync.
+The repository contains no account details or task content from the screenshots.
+The interface uses dark surfaces and pink accents. The design is not final.
 
 ## Run
 
-Install Rust 1.98.0 and the native build tools for your platform.
-Run these commands from the repository root:
+Install [rustup](https://rustup.rs) and the native build tools for your platform.
+On Linux, also install the libxkbcommon, Wayland, and Mesa OpenGL development packages.
+`rust-toolchain.toml` selects Rust 1.98.0. Rustup installs it on the first build.
 
-    cargo generate-lockfile
-    cargo run --locked
+Run this command from the repository root:
 
-The first build creates Cargo.lock. Commit that file after dependency resolution.
-The scaffold environment could not reach crates.io, so no lockfile is included yet.
+```bash
+cargo run --locked
+```
 
-## Checks
+## Platforms
 
-    cargo fmt --all --check
-    cargo clippy --locked --all-targets -- -D warnings
-    cargo test --locked --all-targets
-    cargo build --locked
+Linux and Windows are the main development and validation targets.
+Keep the design portable to macOS. macOS has lower priority for now.
+The timer model uses only the Rust standard library.
+A separate CI job compiles and runs its tests on Linux and Windows.
+
+## Timer model
+
+The first TDD step is complete in `src/timer.rs`.
+Seven tests cover initial state, elapsed time, stop, resume, overlapping tasks, repeated starts, and repeated stops.
+Tests supply timestamps. They do not read a clock or wait for time to pass.
+
+Run the timer tests after dependency resolution:
+
+```bash
+cargo test --locked --lib
+```
+
+See [the timer guide](docs/timer.md) for the model and the TDD sequence.
 
 ## Planned workflow
 
-The main window will contain timer entry, project selection, and a list grouped by day.
-Projects will supply names and colours for entries and widget tasks.
-The widget will open from the main window, like Spotifast's mini player.
-It will hold up to three tasks with independent start and stop controls.
-Multiple timers may run at the same time.
+- The main window will contain timer entry, project selection, and a list grouped by day.
+- Projects will supply names and colours for entries and widget tasks.
+- The widget will open from the main window.
+- The widget will hold up to three tasks with independent start and stop controls.
+- More than one timer can run at the same time.
 
-See [the architecture](docs/architecture.md),
-[the integration boundaries](docs/toggl-boundaries.md),
-and [the contribution guide](CONTRIBUTING.md).
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Toggl integration boundaries](docs/toggl-boundaries.md)
+- [Contribution guide and checks](CONTRIBUTING.md)

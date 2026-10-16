@@ -3,6 +3,27 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  timer-model:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup toolchain install 1.98.0 --profile minimal
+      - name: Create test output directory
+        shell: bash
+        run: mkdir -p target/timer-tests
+      - name: Compile the standalone timer tests
+        run: rustc --edition=2024 --crate-name trackfast --test src/lib.rs -D warnings --out-dir target/timer-tests
+      - name: Run timer tests on Windows
+        if: runner.os == 'Windows'
+        run: ./target/timer-tests/trackfast.exe
+      - name: Run timer tests on Linux
+        if: runner.os == 'Linux'
+        run: ./target/timer-tests/trackfast
   native:
     strategy:
       fail-fast: false
