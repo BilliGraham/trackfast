@@ -1,53 +1,68 @@
 # Trackfast
 
-Trackfast is a native Rust and egui desktop client for Toggl Track.
-The supplied Toggl screenshots are its visual reference.
+Trackfast is a native Rust and egui time tracker for one person on one computer.
+Its design is inspired by Toggl Track. It is not a Toggl client and uses no Toggl branding.
+All data stays in a local SQLite file. Trackfast has no account, sync, or hosted backend.
 The GitHub repository is BilliGraham/trackfast. Keep it private.
 
 ## Current scope
 
-- Sign-in with a Toggl Track API token, kept in the credential store of the operating system.
-- A read-only Timer screen with the running entry, a Calendar view, and a List view.
+- A widget that runs up to three tasks at the same time, each with a play and pause button.
+- A Timer screen with the running tasks, a Calendar view, and a List view.
 - The Calendar view shows one week on an hour grid, with day totals, a week total, and project shares.
-- Use the arrows to show earlier weeks. Each earlier week that is not loaded uses one Toggl request.
-- The List view groups the entries since the start of last week by day, with daily and weekly totals.
-- A read-only Projects screen, grouped by workspace.
-- A manual Refresh button.
-- A separate widget that opens and closes from the main window, with up to three pinned Toggl entries.
-- An always-on-top request for the widget.
-
-Trackfast does not change any data in Toggl.
-Timer controls and project creation are disabled placeholders.
-The standalone timer model supports start, stop, resume, and overlapping tasks.
-The interface does not use the model yet.
-Trackfast keeps time data and widget selections in memory. It loads the data again after each start.
-The repository contains no account details or task content from the screenshots.
-The interface uses dark surfaces and pink accents. The design is not final.
+- The List view groups the sessions since the start of last week by day.
+- A Projects screen to create, edit, archive, and restore projects with a colour and an optional client.
+- A Settings screen with an optional, one-time import from Toggl.
 
 ## Widget
 
-Open widget shows the running entry on first use. If no entry runs, it shows the most recent entry.
-If there are no entries, the widget shows an empty row.
+Open the widget from the Timer screen. Move the pointer over the widget to show the ⋮ menu at the lower left.
 
-Move the pointer over the widget. Open the ⋮ menu at the lower left and select Add task.
-The widget holds a maximum of three entries. Add task is disabled when the widget is full.
-The menu also has a Close widget action.
-In the Calendar view, hover over an entry to show its menu with three vertical dots.
-The List view also has this menu for each entry.
-Select Add to widget.
-This also opens the widget.
-The action is disabled when the entry is already selected or the widget is full.
-Use the remove button on a row to remove that selection. This does not stop or change the Toggl entry.
+1. Select Add task.
+2. Type a new task and select a project, or select a recent task to continue it.
+3. The new row starts a session at once.
 
-Closing the widget and refreshing Toggl preserve the selected rows.
-Sign-out or app exit clears the selections. The widget does not save them to disk.
-If a selected entry leaves the loaded history, its row shows the last known time and a history notice.
+Select pause to end the session. Select play to start a new session on the same row.
+More than one row can run at the same time.
+While a row runs, its time shows the current session. While it is paused, its time shows today's total for that task.
+Select × to remove a row. A running row stops first, so its time is kept.
+The widget holds at most three rows.
+
+In the Calendar view and the List view, each session has a menu with three vertical dots.
+Select Continue in widget to add that task to the widget and start it.
+
+Running sessions keep running when you close Trackfast, and they continue when you open it again.
+Each start, pause, and remove is one database transaction, so a crash does not lose time.
+Sessions shorter than one second are discarded.
+
+## Data
+
+Trackfast keeps its data in `trackfast.db` in the local data folder of the user:
+
+- Windows: `%LOCALAPPDATA%\trackfast\trackfast.db`
+- Linux: `~/.local/share/trackfast/trackfast.db`
+- macOS: `~/Library/Application Support/trackfast/trackfast.db`
+
+Back up this file to keep your history. Close Trackfast before you copy it.
+
+## Import from Toggl
+
+The import is optional. It copies your Toggl projects, clients, and completed time entries once.
+
+1. Open your [Toggl Track profile](https://track.toggl.com/profile) and copy the API token.
+2. In Trackfast, open Settings, paste the token, and enter a start date.
+3. Select Import.
+
+Trackfast uses the token only for that import. It does not save the token.
+Running entries in Toggl are skipped. A second import adds only entries that are new.
+See [the import rules](docs/toggl-import.md).
 
 ## Run
 
 Install [rustup](https://rustup.rs) and the native build tools for your platform.
 On Linux, also install the libxkbcommon, Wayland, and Mesa OpenGL development packages.
 `rust-toolchain.toml` selects Rust 1.98.0. Rustup installs it on the first build.
+SQLite is compiled into Trackfast, so no system SQLite library is necessary.
 
 Run this command from the repository root:
 
@@ -55,53 +70,20 @@ Run this command from the repository root:
 cargo run --locked
 ```
 
-## Connect to Toggl
-
-1. Open your [Toggl Track profile](https://track.toggl.com/profile).
-2. Copy the API token.
-3. Paste the token into Trackfast and select Connect.
-
-Trackfast keeps the token in Windows Credential Manager, the macOS Keychain, or the Linux Secret Service.
-On Linux, a Secret Service provider such as GNOME Keyring or KWallet must run.
-Select Sign out to remove the saved token and clear the token field's edit history.
-A rejected saved token returns you to sign-in.
-
-Free Toggl plans allow 30 requests per hour to the endpoints that Trackfast uses.
-Each sync uses two requests. Trackfast does not poll.
-It syncs once at start, after you connect, and when you select Refresh.
-All sync attempts share a limit of 30 request attempts in a rolling hour.
-Trackfast waits at least four minutes between sync attempts, including startup and sign-in.
-After HTTP 402 or 429, it blocks further attempts for one hour. It does not retry automatically.
-These limits apply to the current process. Other apps and restarts can still consume the shared Toggl quota.
-
 ## Platforms
 
 Linux and Windows are the main development and validation targets.
 Keep the design portable to macOS. macOS has lower priority for now.
-The timer model uses only the Rust standard library.
-A separate CI job compiles and runs its tests on Linux and Windows.
 
 ## Timer model
 
-The first TDD step is complete in `src/timer.rs`.
-Seven tests cover initial state, elapsed time, stop, resume, overlapping tasks, repeated starts, and repeated stops.
-Tests supply timestamps. They do not read a clock or wait for time to pass.
+`src/timer.rs` is a standalone, in-memory timer model from an earlier step. The app does not use it.
+See [the timer guide](docs/timer.md).
 
-Run the timer tests after dependency resolution:
+## Planned work
 
-```bash
-cargo test --locked --lib
-```
-
-See [the timer guide](docs/timer.md) for the model and the TDD sequence.
-
-## Planned workflow
-
-- The main window will contain timer entry, project selection, and a list grouped by day.
-- Projects will supply names and colours for entries and widget tasks.
-- The widget will open from the main window.
-- The widget will hold up to three tasks with independent start and stop controls.
-- More than one timer can run at the same time.
+- A weekly export of time by project and client, for upload to Xero.
+- Editing and deleting past sessions.
 
 ## Fonts
 
@@ -112,5 +94,5 @@ Both fonts use the SIL Open Font License 1.1. The license files are next to the 
 
 - [Architecture](docs/architecture.md)
 - [Interface design](docs/interface.md)
-- [Toggl integration boundaries](docs/toggl-boundaries.md)
+- [Toggl import rules](docs/toggl-import.md)
 - [Contribution guide and checks](CONTRIBUTING.md)

@@ -79,5 +79,5 @@ Linux and macOS execution remain unverified in this session.
 
 ## Current limit
 
-This step does not change the interface or connect a Toggl account.
+The app does not use this model. The widget keeps its sessions in the database instead.
 The next proposed step connects one widget row to this model.

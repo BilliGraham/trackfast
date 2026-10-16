@@ -3,27 +3,30 @@
 Trackfast uses dark neutral surfaces, small headings, and muted pink selection accents.
 Project colours identify projects. They do not decorate unrelated controls.
 
-The navigation uses full-width rows. The main view separates timer controls, totals, and sync status.
-The Timer screen has a Calendar view and a List view. The Calendar view is the default.
-The Calendar view shows hour labels in 12-hour format and entries as blocks in their project colour.
-Overlapping entries share the day width. Entries that cross midnight show on both days.
+The navigation has Timer, Projects, and Settings. The navigation uses full-width rows.
+The Timer screen shows the running sessions in a card, then a Calendar view or a List view.
+The Calendar view is the default.
+The Calendar view shows hour labels in 12-hour format and sessions as blocks in their project colour.
+Overlapping sessions share the day width. Sessions that cross midnight show on both days.
 A red line marks the current time. The − and + buttons change the hour height.
-In the List view, time entries show the description and duration above the project and time range.
+In the List view, sessions show the description and duration above the project and time range.
 Long descriptions and project names shorten to fit the available width. Hover to read the full text.
+Calendar blocks and List view sessions have menus with three vertical dots.
+Calendar block menus appear only while the pointer is over the block.
+Each menu has a Continue in widget action. The action is disabled when the widget has three rows.
 
-The widget uses the same colours and starts with one compact row.
-On first use, it selects the running entry, then the most recent entry, or shows an empty row.
+The widget is a hub for current work, not a history.
+Each row shows a round play or pause button in the project colour, the task, the project, the time, and ×.
+The play and pause icons are painted shapes, because the bundled fonts lack those glyphs.
+A running row shows the time of the current session. A paused row shows today's total for that task in grey.
 The ⋮ menu appears at the lower left on hover or keyboard focus. It stays visible while a menu is open.
-Its Add task submenu lists recent entries. Add task is disabled when three entries are selected.
-The menu also has a Close widget action.
-Calendar blocks and List view entries have menus with three vertical dots.
-Hover over a calendar block to show its menu.
-Each menu has an Add to widget action.
-The action is disabled for duplicate selections or a full widget.
-Each widget row has a remove button. Removing a row does not change the Toggl entry.
-Widget closure and sync preserve selections. Sign-out and app exit clear them.
-Selected entries outside the loaded history keep their last known time and show a history notice.
+Its Add task submenu has a new task form and a list of recent tasks that are not already in the widget.
+Add task is disabled when the widget has three rows. The menu also has a Close widget action.
 The main button shows Open widget or Close widget to match the current window state.
+
+The Projects screen lists projects with their colour and client. Archived projects are last.
+The project form has a name, an optional client with suggestions from existing clients, and a colour palette.
+The Settings screen has the Toggl import form.
 Disabled controls explain their current limit on hover.
 Empty screens use short messages without development plans or sample account data.
 

@@ -1,8 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod db;
+mod entries;
+mod import;
 mod model;
-mod sync;
 mod toggl;
 mod ui;
 

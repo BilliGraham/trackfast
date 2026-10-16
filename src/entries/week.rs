@@ -4,7 +4,7 @@ use jiff::civil::Date;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp, ToSpan};
 
-use super::{TimeEntry, summary};
+use super::{Session, summary};
 
 pub const MINUTES_PER_DAY: f32 = 24.0 * 60.0;
 /// Very short entries still need room for one line of text, so overlap
@@ -15,7 +15,7 @@ const MIN_BLOCK_MINUTES: f32 = 15.0;
 /// `start` and `end` are minutes after local midnight.
 #[derive(Clone, Copy, Debug)]
 pub struct Block<'a> {
-    pub entry: &'a TimeEntry,
+    pub entry: &'a Session,
     pub start: f32,
     pub end: f32,
     pub column: usize,
@@ -37,7 +37,7 @@ pub fn shift(week_start: Date, weeks: i64) -> Date {
 }
 
 /// The ISO week number of the week. The middle day decides it, so weeks
-/// that start on Sunday or Saturday get the same number as Toggl shows.
+/// that start on Sunday or Saturday get the number of their Monday-to-Sunday week.
 pub fn number(week_start: Date) -> i8 {
     week_start
         .checked_add(3.days())
@@ -46,7 +46,7 @@ pub fn number(week_start: Date) -> i8 {
         .week()
 }
 
-fn entry_end(entry: &TimeEntry, now: Timestamp) -> Timestamp {
+fn entry_end(entry: &Session, now: Timestamp) -> Timestamp {
     entry
         .start
         .checked_add(entry.elapsed(now))
@@ -55,7 +55,7 @@ fn entry_end(entry: &TimeEntry, now: Timestamp) -> Timestamp {
 
 /// Splits entries at local midnight and places overlapping parts side by side.
 pub fn day_blocks<'a>(
-    entries: &'a [TimeEntry],
+    entries: &'a [Session],
     day: Date,
     tz: &TimeZone,
     now: Timestamp,
@@ -136,7 +136,7 @@ fn finish_group(group: &mut [Block], columns: usize) {
 
 /// The total of entries that started in `[from, to)`.
 pub fn total_between(
-    entries: &[TimeEntry],
+    entries: &[Session],
     from: Timestamp,
     to: Timestamp,
     now: Timestamp,
@@ -148,7 +148,7 @@ pub fn total_between(
 
 /// Totals per project for entries that started in `[from, to)`, largest first.
 pub fn project_totals(
-    entries: &[TimeEntry],
+    entries: &[Session],
     from: Timestamp,
     to: Timestamp,
     now: Timestamp,
@@ -176,15 +176,14 @@ mod tests {
     use super::*;
     use jiff::civil::date;
 
-    fn entry(start: &str, seconds: i64) -> TimeEntry {
+    fn entry(start: &str, seconds: i64) -> Session {
         let start: Timestamp = start.parse().unwrap();
-        TimeEntry {
+        Session {
             id: start.as_second(),
             project_id: None,
-            description: None,
+            description: String::new(),
             start,
             stop: (seconds >= 0).then(|| start + SignedDuration::from_secs(seconds)),
-            duration: seconds,
         }
     }
 

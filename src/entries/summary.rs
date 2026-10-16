@@ -2,15 +2,15 @@ use jiff::civil::Date;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp, ToSpan};
 
-use super::TimeEntry;
+use super::Session;
 
 pub struct Day<'a> {
     pub date: Date,
     pub total: SignedDuration,
-    pub entries: Vec<&'a TimeEntry>,
+    pub entries: Vec<&'a Session>,
 }
 
-/// `beginning_of_week` uses Toggl numbering: 0 is Sunday, 1 is Monday.
+/// `beginning_of_week`: 0 is Sunday, 1 is Monday.
 pub fn week_start(today: Date, beginning_of_week: u8) -> Date {
     let today_offset = i64::from(today.weekday().to_sunday_zero_offset());
     let days_back = (today_offset - i64::from(beginning_of_week.min(6))).rem_euclid(7);
@@ -24,8 +24,8 @@ pub fn start_of_day(date: Date, tz: &TimeZone) -> Option<Timestamp> {
 }
 
 /// Groups entries by the local date on which they started, newest day first.
-pub fn days<'a>(entries: &'a [TimeEntry], tz: &TimeZone, now: Timestamp) -> Vec<Day<'a>> {
-    let mut sorted: Vec<&TimeEntry> = entries.iter().collect();
+pub fn days<'a>(entries: &'a [Session], tz: &TimeZone, now: Timestamp) -> Vec<Day<'a>> {
+    let mut sorted: Vec<&Session> = entries.iter().collect();
     sorted.sort_by_key(|entry| std::cmp::Reverse(entry.start));
     let mut days: Vec<Day> = Vec::new();
     for entry in sorted {
@@ -46,7 +46,7 @@ pub fn days<'a>(entries: &'a [TimeEntry], tz: &TimeZone, now: Timestamp) -> Vec<
 }
 
 /// Sums entries that started at or after `since`.
-pub fn total_since(entries: &[TimeEntry], since: Timestamp, now: Timestamp) -> SignedDuration {
+pub fn total_since(entries: &[Session], since: Timestamp, now: Timestamp) -> SignedDuration {
     entries
         .iter()
         .filter(|entry| entry.start >= since)
@@ -70,15 +70,14 @@ mod tests {
     use super::*;
     use jiff::civil::date;
 
-    fn entry(start: &str, seconds: i64) -> TimeEntry {
+    fn entry(start: &str, seconds: i64) -> Session {
         let start: Timestamp = start.parse().unwrap();
-        TimeEntry {
+        Session {
             id: start.as_second(),
             project_id: None,
-            description: None,
+            description: String::new(),
             start,
             stop: (seconds >= 0).then(|| start + SignedDuration::from_secs(seconds)),
-            duration: seconds,
         }
     }
 

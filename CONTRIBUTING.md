@@ -3,7 +3,7 @@
 ## Product scope
 
 Build one small step at a time.
-The current steps are the standalone timer model and read-only Toggl sync.
+The current step is local time tracking with a widget, projects, and an optional Toggl import.
 The planned product has these parts:
 
 - A timer screen.
@@ -50,8 +50,8 @@ Commit `Cargo.lock` when dependencies change.
 Use TDD for timer changes. Run one new test before changing the implementation.
 If it already passes, record that result. Do not introduce a defect to force a failure.
 Run the full timer suite after each change.
-Add focused regression tests for sync and date behaviour.
-Do not call the real Toggl API from tests.
+Add focused regression tests for database, timer, and date behaviour.
+Use an in-memory database in tests. Do not call the real Toggl API from tests.
 Examine interface changes at narrow and normal window sizes.
 Examine both themes when the app supports both themes.
 Keep review captures and recordings outside the repository.

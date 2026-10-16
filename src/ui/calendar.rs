@@ -2,10 +2,10 @@ use eframe::egui::{self, Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec
 use jiff::Timestamp;
 use jiff::civil::Date;
 
-use super::{Clock, description, digits, project_colour, style};
+use super::{Clock, continue_action, description, digits, project_colour, style};
+use crate::entries::week::{self, Block};
+use crate::entries::{Snapshot, summary};
 use crate::model::{Action, State};
-use crate::toggl::week::{self, Block};
-use crate::toggl::{Snapshot, summary};
 
 const GUTTER: f32 = 72.0;
 const HEADER_HEIGHT: f32 = 54.0;
@@ -71,7 +71,7 @@ pub fn show(
     let hour_height = state.calendar.hour_height();
     let blocks: Vec<Vec<Block>> = if loaded {
         days.iter()
-            .map(|day| week::day_blocks(&snapshot.entries, *day, &clock.tz, clock.now))
+            .map(|day| week::day_blocks(&snapshot.sessions, *day, &clock.tz, clock.now))
             .collect()
     } else {
         vec![Vec::new(); 7]
@@ -104,7 +104,6 @@ pub fn show(
                 ui.push_id((days[index], block.entry.id), |ui| {
                     entry_block(
                         ui,
-                        &state.widget,
                         snapshot,
                         clock,
                         block,
@@ -129,7 +128,7 @@ pub fn show(
             }
         }
         if !loaded {
-            not_loaded(ui, state, rect, actions);
+            not_loaded(ui, rect);
         }
     });
 }
@@ -141,7 +140,7 @@ fn project_bar(
     to: Timestamp,
     now: Timestamp,
 ) {
-    let totals = week::project_totals(&snapshot.entries, from, to, now);
+    let totals = week::project_totals(&snapshot.sessions, from, to, now);
     let sum: f64 = totals.iter().map(|(_, total)| total.as_secs_f64()).sum();
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
     let painter = ui.painter_at(rect);
@@ -157,10 +156,7 @@ fn project_bar(
     for (project, total) in totals {
         let width = rect.width() * (total.as_secs_f64() / sum) as f32;
         let (name, colour) = match project.and_then(|id| snapshot.project(id)) {
-            Some(project) => (
-                project.name.to_uppercase(),
-                project_colour(project.color.as_deref()),
-            ),
+            Some(project) => (project.name.to_uppercase(), project_colour(&project.colour)),
             None => ("NO PROJECT".to_owned(), super::NO_PROJECT),
         };
         let segment = Rect::from_min_max(pos2(left, rect.top()), pos2(left + width, rect.bottom()));
@@ -255,7 +251,7 @@ fn header(
             },
         );
         let total = match (bounds[index], bounds[index + 1]) {
-            (Some(from), Some(to)) => week::total_between(&snapshot.entries, from, to, clock.now),
+            (Some(from), Some(to)) => week::total_between(&snapshot.sessions, from, to, clock.now),
             _ => jiff::SignedDuration::ZERO,
         };
         digits::paint(
@@ -310,7 +306,6 @@ fn block_fill(colour: Color32) -> Color32 {
 #[allow(clippy::too_many_arguments)]
 fn entry_block(
     ui: &mut egui::Ui,
-    widget: &crate::model::widget::Widget,
     snapshot: &Snapshot,
     clock: &Clock,
     block: &Block,
@@ -328,7 +323,7 @@ fn entry_block(
     let rect = Rect::from_min_size(pos2(left, y + 1.0), vec2(lane_width - 2.0, height - 2.0));
     let project = entry.project_id.and_then(|id| snapshot.project(id));
     let colour = project
-        .map(|project| project_colour(project.color.as_deref()))
+        .map(|project| project_colour(&project.colour))
         .unwrap_or(super::NO_PROJECT);
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 3.0, block_fill(colour));
@@ -432,7 +427,7 @@ fn entry_block(
             ui.spacing_mut().button_padding = egui::Vec2::ZERO;
             ui.spacing_mut().interact_size = menu_rect.size();
             super::actions::menu_on_hover(ui, "Entry actions", rect, |ui| {
-                super::widget::entry_action(ui, widget, entry.id, actions);
+                continue_action(ui, snapshot, entry, actions);
             });
         },
     );
@@ -460,21 +455,14 @@ fn now_line(
     painter.circle_filled(pos2(left, y), 4.0, NOW_LINE);
 }
 
-fn not_loaded(ui: &mut egui::Ui, state: &State, grid: Rect, actions: &mut Vec<Action>) {
+fn not_loaded(ui: &mut egui::Ui, grid: Rect) {
     let visible = ui.clip_rect().intersect(grid);
-    let panel = Rect::from_center_size(visible.center(), vec2(300.0, 96.0));
+    let panel = Rect::from_center_size(visible.center(), vec2(240.0, 64.0));
     ui.painter().rect_filled(panel, 6.0, style::SURFACE);
     ui.scope_builder(egui::UiBuilder::new().max_rect(panel.shrink(14.0)), |ui| {
         ui.vertical_centered(|ui| {
-            if state.toggl.busy {
-                ui.spinner();
-                ui.label("Loading this week from Toggl");
-            } else {
-                ui.label("This week is not loaded.");
-                if ui.button("Load week").clicked() {
-                    actions.push(Action::LoadWeek);
-                }
-            }
+            ui.spinner();
+            ui.label("Loading this week");
         });
     });
 }
@@ -483,42 +471,46 @@ fn not_loaded(ui: &mut egui::Ui, state: &State, grid: Rect, actions: &mut Vec<Ac
 mod tests {
     use super::*;
 
-    fn snapshot() -> Snapshot {
+    const NOW: &str = "2026-10-16T12:00:00Z";
+
+    /// Four completed sessions, and `rows` widget rows.
+    fn snapshot(rows: usize) -> Snapshot {
+        let sessions: Vec<crate::entries::Session> = (1..=4)
+            .map(|id| crate::entries::Session {
+                id,
+                description: format!("Task {id}"),
+                project_id: None,
+                start: "2026-10-16T08:00:00Z".parse().unwrap(),
+                stop: Some("2026-10-16T10:00:00Z".parse().unwrap()),
+            })
+            .collect();
         Snapshot {
-            user: crate::toggl::User {
-                fullname: None,
-                beginning_of_week: 1,
-            },
-            projects: Vec::new(),
-            workspaces: Vec::new(),
-            entries: (1..=4)
-                .map(|id| crate::toggl::TimeEntry {
-                    id,
-                    project_id: None,
-                    description: Some(format!("Task {id}")),
-                    start: "2026-10-16T08:00:00Z".parse().unwrap(),
-                    stop: Some("2026-10-16T10:00:00Z".parse().unwrap()),
-                    duration: 7200,
+            rows: (0..rows)
+                .map(|id| crate::entries::WidgetRow {
+                    id: id as i64,
+                    task: crate::entries::Task::default(),
+                    session: None,
                 })
                 .collect(),
+            sessions,
             loaded_from: "2026-10-05T00:00:00Z".parse().unwrap(),
-            fetched_at: "2026-10-16T12:00:00Z".parse().unwrap(),
+            ..Default::default()
         }
     }
 
     fn draw_entry(
         ctx: &egui::Context,
-        widget: &crate::model::widget::Widget,
+        rows: usize,
         end: f32,
         events: Vec<egui::Event>,
     ) -> (Vec<Action>, egui::FullOutput) {
-        let snapshot = snapshot();
+        let snapshot = snapshot(rows);
         let clock = Clock {
-            now: snapshot.fetched_at,
+            now: NOW.parse().unwrap(),
             tz: jiff::tz::TimeZone::UTC,
         };
         let block = Block {
-            entry: &snapshot.entries[3],
+            entry: &snapshot.sessions[3],
             start: 0.0,
             end,
             column: 0,
@@ -536,7 +528,6 @@ mod tests {
                     style::apply(ui);
                     entry_block(
                         ui,
-                        widget,
                         &snapshot,
                         &clock,
                         &block,
@@ -593,35 +584,29 @@ mod tests {
     }
 
     #[test]
-    fn calendar_menu_pins_an_entry_and_obeys_widget_limits() {
-        for selection in [vec![], vec![4], vec![1, 2, 3]] {
+    fn calendar_menu_continues_an_entry_while_the_widget_has_room() {
+        for rows in [0, 3] {
             let ctx = egui::Context::default();
             crate::ui::install_fonts(&ctx);
-            let mut widget = crate::model::widget::Widget::default();
-            for id in &selection {
-                widget.pin(*id, &snapshot());
-            }
-            let (_, output) = draw_entry(&ctx, &widget, 120.0, hover_block());
+            let (_, output) = draw_entry(&ctx, rows, 120.0, hover_block());
             let menu = menu_position(&output);
-            draw_entry(&ctx, &widget, 120.0, click(menu));
-            let (_, output) = draw_entry(&ctx, &widget, 120.0, vec![]);
-            let add = output
+            draw_entry(&ctx, rows, 120.0, click(menu));
+            let (_, output) = draw_entry(&ctx, rows, 120.0, vec![]);
+            let item = output
                 .shapes
                 .iter()
                 .find_map(|shape| match &shape.shape {
-                    egui::Shape::Text(text) if text.galley.text() == "Add to widget" => {
+                    egui::Shape::Text(text) if text.galley.text() == "Continue in widget" => {
                         Some(text.pos + text.galley.rect.center().to_vec2())
                     }
                     _ => None,
                 })
-                .expect("The calendar menu must show Add to widget.");
-            let (actions, _) = draw_entry(&ctx, &widget, 120.0, click(add));
-            assert_eq!(
-                actions
-                    .iter()
-                    .any(|action| matches!(action, Action::PinEntry(4))),
-                selection.is_empty()
+                .expect("The calendar menu must show Continue in widget.");
+            let (actions, _) = draw_entry(&ctx, rows, 120.0, click(item));
+            let continued = actions.iter().any(
+                |action| matches!(action, Action::AddTask(task) if task.description == "Task 4"),
             );
+            assert_eq!(continued, rows == 0);
         }
     }
 
@@ -629,7 +614,7 @@ mod tests {
     fn short_calendar_entries_show_a_vertical_menu() {
         let ctx = egui::Context::default();
         crate::ui::install_fonts(&ctx);
-        let (_, output) = draw_entry(&ctx, &Default::default(), 1.0, hover_block());
+        let (_, output) = draw_entry(&ctx, 0, 1.0, hover_block());
         let pos = menu_position(&output);
         assert!((11.0..27.0).contains(&pos.y));
     }
@@ -638,7 +623,7 @@ mod tests {
     fn calendar_menu_hides_until_the_entry_is_hovered() {
         let ctx = egui::Context::default();
         crate::ui::install_fonts(&ctx);
-        let (_, output) = draw_entry(&ctx, &Default::default(), 120.0, vec![]);
+        let (_, output) = draw_entry(&ctx, 0, 120.0, vec![]);
         let dots = output
             .shapes
             .iter()

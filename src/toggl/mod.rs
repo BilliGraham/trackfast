@@ -1,15 +1,14 @@
+//! Read-only access to the Toggl Track API v9, used only to import history.
+
 mod client;
-pub mod credentials;
 pub(crate) mod quota;
-pub mod summary;
-pub mod week;
 
 use std::fmt;
 
-use jiff::{SignedDuration, Timestamp};
+use jiff::Timestamp;
 use serde::Deserialize;
 
-pub use client::{ApiError, Client};
+pub use client::{Client, Me};
 
 /// A Toggl Track API token. Its `Debug` output never shows the value.
 pub struct ApiToken(String);
@@ -32,24 +31,18 @@ impl fmt::Debug for ApiToken {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct User {
-    pub fullname: Option<String>,
-    /// 0 is Sunday, 1 is Monday, and so on.
-    pub beginning_of_week: u8,
-}
-
 #[derive(Clone, Debug, Deserialize)]
-pub struct Workspace {
+pub struct TogglClient {
     pub id: i64,
     pub name: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct Project {
+pub struct TogglProject {
     pub id: i64,
-    pub workspace_id: i64,
     pub name: String,
+    #[serde(default)]
+    pub client_id: Option<i64>,
     #[serde(default)]
     pub color: Option<String>,
     #[serde(default = "active_by_default")]
@@ -75,51 +68,16 @@ pub struct TimeEntry {
 }
 
 impl TimeEntry {
-    pub fn is_running(&self) -> bool {
-        self.duration < 0
-    }
-
-    pub fn elapsed(&self, now: Timestamp) -> SignedDuration {
-        if self.is_running() {
-            now.duration_since(self.start).max(SignedDuration::ZERO)
-        } else {
-            SignedDuration::from_secs(self.duration)
+    /// The stop time of a completed entry. Running entries have none.
+    pub fn completed_stop(&self) -> Option<Timestamp> {
+        if self.duration < 0 {
+            return None;
         }
-    }
-}
-
-/// The read-only Toggl data that one sync loads.
-#[derive(Clone, Debug)]
-pub struct Snapshot {
-    pub user: User,
-    pub workspaces: Vec<Workspace>,
-    pub projects: Vec<Project>,
-    pub entries: Vec<TimeEntry>,
-    /// The snapshot holds every entry that started at or after this time.
-    pub loaded_from: Timestamp,
-    pub fetched_at: Timestamp,
-}
-
-impl Snapshot {
-    pub fn project(&self, id: i64) -> Option<&Project> {
-        self.projects.iter().find(|project| project.id == id)
-    }
-
-    pub fn running(&self) -> Option<&TimeEntry> {
-        self.entries.iter().find(|entry| entry.is_running())
-    }
-
-    /// Adds entries from `from` up to the current `loaded_from` boundary.
-    pub fn extend_back(&mut self, from: Timestamp, entries: Vec<TimeEntry>) {
-        let boundary = self.loaded_from;
-        self.entries.extend(
-            entries
-                .into_iter()
-                .filter(|entry| entry.start >= from && entry.start < boundary),
-        );
-        self.entries
-            .sort_by_key(|entry| std::cmp::Reverse(entry.start));
-        self.loaded_from = self.loaded_from.min(from);
+        self.stop.or_else(|| {
+            self.start
+                .checked_add(jiff::SignedDuration::from_secs(self.duration))
+                .ok()
+        })
     }
 }
 
@@ -140,64 +98,24 @@ mod tests {
     }
 
     #[test]
-    fn decodes_documented_time_entry_fields() {
+    fn completed_entries_have_a_stop_and_running_entries_do_not() {
         let json = r#"[
             {"id": 1, "workspace_id": 7, "project_id": null, "description": null,
              "start": "2026-10-12T08:00:00+00:00", "stop": "2026-10-12T09:30:00+00:00",
              "duration": 5400, "tags": null, "billable": false},
             {"id": 2, "workspace_id": 7, "project_id": 3, "description": "Review",
-             "start": "2026-10-12T10:00:00Z", "stop": null, "duration": -1}
+             "start": "2026-10-12T10:00:00Z", "stop": null, "duration": -1},
+            {"id": 3, "start": "2026-10-16T08:00:00Z", "stop": null, "duration": 3600}
         ]"#;
         let entries: Vec<TimeEntry> = serde_json::from_str(json).unwrap();
-        assert_eq!(entries[0].id, 1);
-        assert_eq!(entries[1].id, 2);
-        assert!(!entries[0].is_running());
-        assert_eq!(entries[0].elapsed(Timestamp::UNIX_EPOCH).as_secs(), 5400);
-        assert!(entries[1].is_running());
-        let now: Timestamp = "2026-10-12T10:00:42Z".parse().unwrap();
-        assert_eq!(entries[1].elapsed(now).as_secs(), 42);
-    }
-
-    #[test]
-    fn older_entries_extend_the_loaded_range_without_duplicates() {
-        let entry = |start: &str| TimeEntry {
-            id: start.parse::<Timestamp>().unwrap().as_second(),
-            project_id: None,
-            description: None,
-            start: start.parse().unwrap(),
-            stop: None,
-            duration: 60,
-        };
-        let boundary: Timestamp = "2026-10-05T00:00:00Z".parse().unwrap();
-        let mut snapshot = Snapshot {
-            user: User {
-                fullname: None,
-                beginning_of_week: 1,
-            },
-            workspaces: Vec::new(),
-            projects: Vec::new(),
-            entries: vec![entry("2026-10-05T00:00:00Z")],
-            loaded_from: boundary,
-            fetched_at: boundary,
-        };
-        let from: Timestamp = "2026-09-28T00:00:00Z".parse().unwrap();
-        snapshot.extend_back(
-            from,
-            vec![entry("2026-09-29T08:00:00Z"), entry("2026-10-05T00:00:00Z")],
+        assert_eq!(
+            entries[0].completed_stop(),
+            Some("2026-10-12T09:30:00Z".parse().unwrap())
         );
-        assert_eq!(snapshot.entries.len(), 2);
-        assert_eq!(snapshot.loaded_from, from);
-        assert!(snapshot.entries[0].start > snapshot.entries[1].start);
-    }
-
-    #[test]
-    fn duration_only_entries_keep_their_completed_duration() {
-        let entry: TimeEntry = serde_json::from_str(
-            r#"{"id": 1, "start":"2026-10-16T08:00:00Z","stop":null,"duration":3600}"#,
-        )
-        .unwrap();
-        let now = "2026-10-16T13:00:00Z".parse().unwrap();
-        assert!(!entry.is_running());
-        assert_eq!(entry.elapsed(now).as_secs(), 3600);
+        assert_eq!(entries[1].completed_stop(), None);
+        assert_eq!(
+            entries[2].completed_stop(),
+            Some("2026-10-16T09:00:00Z".parse().unwrap())
+        );
     }
 }

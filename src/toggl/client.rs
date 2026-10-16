@@ -3,13 +3,12 @@ use std::time::{Duration, Instant};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use jiff::tz::TimeZone;
-use jiff::{SignedDuration, Timestamp, ToSpan};
+use jiff::Timestamp;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use super::quota::RequestQuota;
-use super::{ApiToken, Project, Snapshot, TimeEntry, User, Workspace, summary};
+use super::{ApiToken, TimeEntry, TogglClient, TogglProject};
 
 const BASE_URL: &str = "https://api.track.toggl.com/api/v9";
 const TIMEOUT: Duration = Duration::from_secs(20);
@@ -70,16 +69,13 @@ pub struct Client {
     authorization: String,
 }
 
-#[derive(Deserialize)]
-struct Me {
+/// The parts of `GET /me?with_related_data=true` that the import uses.
+#[derive(Debug, Default, Deserialize)]
+pub struct Me {
     #[serde(default)]
-    fullname: Option<String>,
+    pub clients: Option<Vec<TogglClient>>,
     #[serde(default)]
-    beginning_of_week: u8,
-    #[serde(default)]
-    workspaces: Option<Vec<Workspace>>,
-    #[serde(default)]
-    projects: Option<Vec<Project>>,
+    pub projects: Option<Vec<TogglProject>>,
 }
 
 impl Client {
@@ -99,33 +95,9 @@ impl Client {
         }
     }
 
-    /// Loads the user, workspaces, projects, and the time entries from the
-    /// start of the previous week. This uses two API requests.
-    pub fn fetch(&self, tz: &TimeZone, quota: &mut RequestQuota) -> Result<Snapshot, ApiError> {
-        let me: Me = self.get("/me", &[("with_related_data", "true")], quota)?;
-        let now = Timestamp::now();
-        let range_start = previous_week_start(now, tz, me.beginning_of_week);
-        let range_end = now + SignedDuration::from_hours(24);
-        let mut entries: Vec<TimeEntry> = self.get(
-            "/me/time_entries",
-            &[
-                ("start_date", &rfc3339(range_start)),
-                ("end_date", &rfc3339(range_end)),
-            ],
-            quota,
-        )?;
-        entries.sort_by_key(|entry| std::cmp::Reverse(entry.start));
-        Ok(Snapshot {
-            user: User {
-                fullname: me.fullname,
-                beginning_of_week: me.beginning_of_week,
-            },
-            workspaces: me.workspaces.unwrap_or_default(),
-            projects: me.projects.unwrap_or_default(),
-            entries,
-            loaded_from: range_start,
-            fetched_at: now,
-        })
+    /// Loads the clients and projects. This uses one API request.
+    pub fn fetch_me(&self, quota: &mut RequestQuota) -> Result<Me, ApiError> {
+        self.get("/me", &[("with_related_data", "true")], quota)
     }
 
     /// Loads the entries that started from `start` up to `end`. This uses one API request.
@@ -164,16 +136,6 @@ impl Client {
     }
 }
 
-fn previous_week_start(now: Timestamp, tz: &TimeZone, beginning_of_week: u8) -> Timestamp {
-    let today = now.to_zoned(tz.clone()).date();
-    let this_week = summary::week_start(today, beginning_of_week);
-    this_week
-        .checked_sub(7.days())
-        .ok()
-        .and_then(|date| summary::start_of_day(date, tz))
-        .unwrap_or(now - SignedDuration::from_hours(14 * 24))
-}
-
 /// Toggl accepts RFC 3339 times. Whole seconds keep the query simple.
 fn rfc3339(timestamp: Timestamp) -> String {
     timestamp.strftime("%Y-%m-%dT%H:%M:%SZ").to_string()
@@ -199,25 +161,18 @@ mod tests {
     }
 
     #[test]
-    fn range_starts_at_local_midnight_of_previous_week() {
-        let tz = TimeZone::fixed(jiff::tz::offset(2));
-        // Friday 16 October 2026, 10:00 local time.
-        let now: Timestamp = "2026-10-16T08:00:00Z".parse().unwrap();
-        let start = previous_week_start(now, &tz, 1);
-        assert_eq!(rfc3339(start), "2026-10-04T22:00:00Z");
-    }
-
-    #[test]
     fn decodes_me_with_related_data() {
         let json = r##"{
             "id": 9, "email": "a@example.com", "fullname": "Ada", "beginning_of_week": 1,
-            "workspaces": [{"id": 7, "name": "Home"}],
-            "projects": [{"id": 3, "workspace_id": 7, "name": "Site", "color": "#06aaf5", "active": false}],
-            "time_entries": [], "tags": null, "clients": null
+            "clients": [{"id": 5, "name": "Acme", "wid": 7}],
+            "projects": [{"id": 3, "workspace_id": 7, "client_id": 5, "name": "Site",
+                          "color": "#06aaf5", "active": false}],
+            "time_entries": [], "tags": null
         }"##;
         let me: Me = serde_json::from_str(json).unwrap();
-        assert_eq!(me.fullname.as_deref(), Some("Ada"));
-        assert_eq!(me.workspaces.unwrap()[0].name, "Home");
-        assert!(!me.projects.unwrap()[0].active);
+        assert_eq!(me.clients.unwrap()[0].name, "Acme");
+        let project = &me.projects.unwrap()[0];
+        assert_eq!(project.client_id, Some(5));
+        assert!(!project.active);
     }
 }

@@ -2,20 +2,18 @@
 
 | Module | Responsibility |
 | --- | --- |
-| `src/main.rs` | Start the native window and select the initial theme. |
-| `src/model/widget.rs` | Own up to three selected entries and their last known data. |
-| `src/model.rs` | Hold navigation state, Toggl connection state, and action types. |
-| `src/lib.rs` | Export the standalone timer module. |
-| `src/timer.rs` | Hold task descriptions, timer state, and seven unit tests. |
-| `src/app.rs` | Apply actions, receive sync events, and manage the widget viewport. |
-| `src/ui/` | Draw the main window, the sign-in form, entries, projects, and widget slots. |
-| `src/sync.rs` | Run Toggl requests and credential-store calls on a background thread. |
-| `src/toggl/client.rs` | Send blocking Toggl Track API v9 requests and map their errors. |
-| `src/toggl/quota.rs` | Count requests and calculate sync deadlines with a monotonic clock. |
-| `src/toggl/credentials.rs` | Read, write, and delete the API token in the credential store. |
-| `src/toggl/summary.rs` | Group entries by local day and calculate totals. |
-| `src/toggl/week.rs` | Split entries at local midnight, place overlapping entries in lanes, and total projects. |
-| `src/ui/calendar.rs` | Draw the week navigator, project shares, day headers, and the hour grid. |
+| `src/main.rs` | Start the native window, select the theme, and install the fonts. |
+| `src/app.rs` | Apply actions, send database commands, receive events, and manage the widget viewport. |
+| `src/model.rs` | Hold interface state, text drafts, and action types. |
+| `src/entries/mod.rs` | Define sessions, projects, clients, widget rows, and the snapshot that the views read. |
+| `src/entries/summary.rs` | Group sessions by local day and calculate totals. |
+| `src/entries/week.rs` | Split sessions at local midnight, place overlapping sessions in lanes, and total projects. |
+| `src/db/mod.rs` | Own the SQLite schema, migrations, and every read and write. |
+| `src/db/worker.rs` | Run all database calls on one background thread. |
+| `src/import.rs` | Run a one-time Toggl import on a background thread. |
+| `src/toggl/` | Send read-only Toggl Track API v9 requests and count them. |
+| `src/ui/` | Draw the main window, the calendar, the list, projects, settings, and the widget. |
+| `src/lib.rs`, `src/timer.rs` | A standalone, in-memory timer model. The app does not use it. |
 
 ## Interface flow
 
@@ -23,70 +21,63 @@
 2. The application applies the actions after the views return.
 3. No view changes application state while it draws.
 
-The sign-in text field is the one exception. egui needs a mutable buffer for text input,
-so the application gives the view a draft string. The application takes and clears the draft on sign-in.
-The field clears its undo history after input. Submission and sign-out also remove its stored edit state.
+Text fields are the one exception. egui needs a mutable buffer for text input,
+so the application gives the views a `Drafts` value. The application reads and clears a draft when it acts on it.
 
-The widget is a second native viewport in the same process.
-Both windows read the same `State`. Widget actions return to `App` after the widget view returns.
-Toggl entry IDs identify selections. The model rejects duplicate selections and a fourth row.
-Refreshes update selected entries without replacing their IDs or changing their order.
-Missing entries keep their last known data. A missing running entry stops accumulating time until it appears in a snapshot again.
-Sign-out clears the selected data and closes the widget.
-Selections stay in memory only. The standalone timer model remains separate.
-It opens from the main window, not from the Toggl website.
-It requests the always-on-top window level from the operating system.
-Some window managers ignore or restrict that request.
-The app repaints after input and after each sync event.
-While a Toggl entry runs, the app also repaints once per second to keep the timer current.
+The widget is a second native viewport in the same process. Both windows read the same `State`.
+Closing the widget does not close the main window.
+The widget requests the always-on-top window level. Some window managers ignore or restrict that request.
+The app repaints after input and after each database event.
+While a session runs, the app also repaints once per second to keep the timers current.
 
-## Sync flow
+## Data flow
 
-1. At start, the worker reads the token from the credential store.
-2. If a token exists, the worker loads a snapshot. If not, the interface shows the sign-in form.
-3. On sign-in, the worker loads a snapshot first. It saves the token only after Toggl accepts it.
-4. The worker sends `Busy`, `RequestLimit`, `Loaded`, `Failed`, or `SignedOut` events through a channel.
-5. The application reads all waiting events at the start of each frame.
+1. At start, the app starts the database worker with the path from `db::default_path()`.
+2. The worker opens the file, applies migrations, and sends the first `Snapshot`.
+3. Each action that changes data becomes one `db::worker::Command`. The app stamps it with the click time.
+4. The worker applies the command in one transaction, then sends a new `Snapshot`.
+5. If a command fails, the worker sends `Failed` with a message, then the current `Snapshot`.
 
-A network failure keeps the last snapshot on screen and shows the error.
-A rejected token removes the active client and saved token, then returns the interface to sign-in.
-The worker preserves typed API errors until it selects the account state.
-Tests use a fake backend for API and credential operations.
+The interface thread never opens the database file.
+A snapshot holds all projects, clients, and widget rows, the sessions from the loaded start time onward, and all running sessions.
+Showing an earlier week moves the loaded start time back. The worker then sends a larger snapshot.
 
-The worker owns one rolling request budget for startup, sign-in, and refresh.
-The interface reads the worker's next permitted attempt time. It does not enforce the budget itself.
-Each HTTP request consumes budget before transmission. Quota errors block all attempts for one hour.
-The token never goes into the model, a log, or an error message.
+## Database
+
+The file is `trackfast.db` in the local data folder of the user. WAL mode and foreign keys are on.
+
+| Table | Content |
+| --- | --- |
+| `clients` | Client names. Names are unique. |
+| `projects` | Name, `#rrggbb` colour, optional client, and archived flag. |
+| `sessions` | Description, optional project, start, and stop in UTC seconds. A null stop means the session runs. |
+| `widget_rows` | Up to three tasks, their order, and the running session of each row. |
+
+`clients`, `projects`, and `sessions` have a unique `toggl_id` column for imported rows.
+
+`PRAGMA user_version` records the schema version.
+`MIGRATIONS` in `src/db/mod.rs` lists one SQL step for each version. All pending steps run in one transaction.
+Never edit a released step. Add a new step, so that existing files upgrade in place.
+The app refuses a file with a newer schema version than it knows.
+
+Pause sets the stop time of the session and clears the session of the row in one transaction.
+A session under one second is deleted instead of kept.
+Removing a running row stops its session first.
+
+## Toggl import
+
+The import thread fetches Toggl data, maps it to `db::Import`, and sends it to the database worker.
+The worker inserts it in one transaction. It skips rows that an earlier import added, by their Toggl ID.
+See `docs/toggl-import.md`.
 
 ## Dependencies
 
 | Crate | Use |
 | --- | --- |
 | eframe | Native window and interface with the glow renderer. Default features are off. |
-| ureq | Blocking HTTPS client with rustls. One background thread makes an async runtime unnecessary. |
-| serde | Decode Toggl JSON. |
+| rusqlite | SQLite access. The `bundled` feature compiles SQLite into the app. |
+| dirs | The local data folder of the user. |
 | jiff | Time zones, local dates, and RFC 3339 times. |
-| keyring | Platform credential stores. |
-| base64 | Encode the basic authentication header. |
-
-The timer model in `src/lib.rs` uses only the standard library.
-
-## Timer model
-
-Each `Task` owns its description and `TimerState`.
-`TimerState` is either stopped or running.
-The model uses `std::time::Duration` and accepts timestamps from a common monotonic origin.
-It does not sample a clock or access the interface.
-It stores accumulated time across active intervals and excludes pauses.
-It does not store individual completed intervals for later sync.
-The interface does not use this model yet.
-
-## Future boundaries
-
-These are design boundaries. The app does not implement these services yet.
-
-- The interface will connect the model to up to three widget tasks.
-- The main window and the widget will read the same model.
-- Background services will own disk writes and Toggl writes.
-- A durable outbox will keep completed intervals until sync succeeds.
-- Before the app retries an uncertain create request, it must check for a duplicate entry.
+| ureq | Blocking HTTPS client with rustls, for the import only. |
+| serde | Decode Toggl JSON. |
+| base64 | Encode the basic authentication header for the import. |

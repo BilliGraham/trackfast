@@ -1,20 +1,23 @@
-pub mod widget;
-
-use std::time::{Duration, Instant};
-
 use jiff::civil::Date;
 
-use crate::toggl::Snapshot;
-use widget::Widget;
+use crate::db::ProjectDraft;
+use crate::entries::{Snapshot, Task};
 
 pub const HOUR_HEIGHTS: [f32; 4] = [36.0, 48.0, 60.0, 84.0];
 const DEFAULT_ZOOM: usize = 2;
+
+/// Colours offered for new projects, in `#rrggbb` form.
+pub const PALETTE: [&str; 10] = [
+    "#06aaf5", "#c56bff", "#ea468d", "#fb8b14", "#c7af14", "#4dc3a0", "#2da608", "#525266",
+    "#d94182", "#0b83d9",
+];
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum Screen {
     #[default]
     Timer,
     Projects,
+    Settings,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -52,109 +55,86 @@ impl Calendar {
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub enum Connection {
-    /// The worker has not read the credential store yet.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub enum ImportState {
     #[default]
-    Starting,
-    SignedOut,
-    SignedIn,
-}
-
-#[derive(Default)]
-pub struct Toggl {
-    pub connection: Connection,
-    pub busy: bool,
-    pub snapshot: Option<Snapshot>,
-    pub problem: Option<String>,
-    pub retry_at: Option<Instant>,
-}
-
-impl Toggl {
-    pub fn request_wait(&self, now: Instant) -> Option<Duration> {
-        self.retry_at
-            .and_then(|retry_at| retry_at.checked_duration_since(now))
-            .filter(|wait| !wait.is_zero())
-    }
-
-    pub fn can_refresh(&self, now: Instant) -> bool {
-        self.connection == Connection::SignedIn && !self.busy && self.request_wait(now).is_none()
-    }
-
-    pub fn can_sign_in(&self, now: Instant) -> bool {
-        self.connection == Connection::SignedOut && !self.busy && self.request_wait(now).is_none()
-    }
+    Idle,
+    Running(String),
+    Done(String),
+    Failed(String),
 }
 
 #[derive(Default)]
 pub struct State {
     pub screen: Screen,
     pub widget_open: bool,
-    pub widget: Widget,
     pub timer_view: TimerView,
     pub calendar: Calendar,
-    pub toggl: Toggl,
+    /// `None` until the database worker sends its first snapshot.
+    pub data: Option<Snapshot>,
+    pub problem: Option<String>,
+    pub import: ImportState,
 }
 
-impl State {
-    pub fn open_widget(&mut self) {
-        if self.toggl.connection != Connection::SignedIn {
-            return;
-        }
-        if let Some(snapshot) = &self.toggl.snapshot {
-            self.widget.initialize(snapshot);
-        }
-        self.widget_open = true;
-    }
-
-    pub fn pin_entry(&mut self, id: i64) -> bool {
-        if self.toggl.connection != Connection::SignedIn {
-            return false;
-        }
-        let Some(snapshot) = &self.toggl.snapshot else {
-            return false;
-        };
-        if !self.widget.pin(id, snapshot) {
-            return false;
-        }
-        self.widget_open = true;
-        true
-    }
-
-    pub fn refresh_widget(&mut self) {
-        if let Some(snapshot) = &self.toggl.snapshot {
-            if self.widget_open {
-                self.widget.initialize(snapshot);
-            }
-            self.widget.refresh(snapshot);
-        }
-    }
-
-    pub fn clear_widget(&mut self) {
-        self.widget.clear();
-        self.widget_open = false;
-    }
+/// Text that the views edit in place, because egui text fields need a
+/// mutable buffer. The app reads and clears a draft when it acts on it.
+#[derive(Default)]
+pub struct Drafts {
+    pub task: Task,
+    pub project: Option<ProjectDraft>,
+    pub import_token: String,
+    pub import_from: String,
 }
 
 pub enum Action {
     Navigate(Screen),
     OpenWidget,
     CloseWidget,
-    PinEntry(i64),
-    UnpinEntry(i64),
-    SignIn,
-    Refresh,
-    SignOut,
     ShowTimerView(TimerView),
     /// `None` returns to the current week.
     ShowWeek(Option<Date>),
-    LoadWeek,
     Zoom(isize),
+    /// Adds a widget row for the task and starts it.
+    AddTask(Task),
+    /// Adds the task in `Drafts::task`.
+    AddDraftTask,
+    Play(i64),
+    Pause(i64),
+    RemoveRow(i64),
+    /// `None` starts a new project.
+    EditProject(Option<i64>),
+    CancelProject,
+    SaveProject,
+    SetArchived(i64, bool),
+    StartImport,
+}
+
+impl ProjectDraft {
+    pub fn for_project(snapshot: &Snapshot, id: Option<i64>) -> Self {
+        let Some(project) = id.and_then(|id| snapshot.project(id)) else {
+            let colour = PALETTE[snapshot.projects.len() % PALETTE.len()];
+            return Self {
+                colour: colour.into(),
+                ..Self::default()
+            };
+        };
+        Self {
+            id: Some(project.id),
+            name: project.name.clone(),
+            colour: project.colour.clone(),
+            client: project
+                .client_id
+                .and_then(|id| snapshot.client(id))
+                .map(|client| client.name.clone())
+                .unwrap_or_default(),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entries::{Client, Project};
 
     #[test]
     fn calendar_zoom_stays_within_the_steps() {
@@ -166,53 +146,26 @@ mod tests {
     }
 
     #[test]
-    fn refresh_waits_until_the_worker_deadline() {
-        let start = Instant::now();
-        let toggl = Toggl {
-            connection: Connection::SignedIn,
-            retry_at: Some(start + Duration::from_secs(240)),
-            ..Toggl::default()
-        };
-        assert!(!toggl.can_refresh(start + Duration::from_secs(239)));
-        assert!(toggl.can_refresh(start + Duration::from_secs(240)));
-        assert!(toggl.can_refresh(start + Duration::from_secs(241)));
-    }
-
-    #[test]
-    fn refresh_needs_an_idle_signed_in_account() {
-        let now = Instant::now();
-        let mut toggl = Toggl::default();
-        assert!(!toggl.can_refresh(now));
-        assert!(!toggl.can_sign_in(now));
-        toggl.connection = Connection::SignedIn;
-        toggl.busy = true;
-        assert!(!toggl.can_refresh(now));
-        toggl.connection = Connection::SignedOut;
-        assert!(!toggl.can_sign_in(now));
-        toggl.busy = false;
-        assert!(toggl.can_sign_in(now));
-    }
-
-    #[test]
-    fn request_deadlines_also_apply_to_sign_in() {
-        let now = Instant::now();
-        let toggl = Toggl {
-            connection: Connection::SignedOut,
-            retry_at: Some(now + Duration::from_secs(240)),
+    fn project_drafts_copy_the_project_or_pick_the_next_colour() {
+        let snapshot = Snapshot {
+            projects: vec![Project {
+                id: 3,
+                name: "Site".into(),
+                colour: "#123456".into(),
+                client_id: Some(5),
+                archived: false,
+            }],
+            clients: vec![Client {
+                id: 5,
+                name: "Acme".into(),
+            }],
             ..Default::default()
         };
-        assert!(!toggl.can_sign_in(now));
-        assert!(toggl.can_sign_in(now + Duration::from_secs(240)));
-    }
-
-    #[test]
-    fn refresh_waits_for_the_two_request_budget() {
-        let start = Instant::now();
-        let toggl = Toggl {
-            connection: Connection::SignedIn,
-            retry_at: Some(start + Duration::from_secs(240)),
-            ..Default::default()
-        };
-        assert!(!toggl.can_refresh(start + Duration::from_secs(60)));
+        let existing = ProjectDraft::for_project(&snapshot, Some(3));
+        assert_eq!(existing.client, "Acme");
+        assert_eq!(existing.colour, "#123456");
+        let new = ProjectDraft::for_project(&snapshot, None);
+        assert_eq!(new.id, None);
+        assert_eq!(new.colour, PALETTE[1]);
     }
 }

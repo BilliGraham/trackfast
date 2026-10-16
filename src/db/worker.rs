@@ -1,0 +1,110 @@
+//! Runs every database call on one background thread.
+
+use std::path::PathBuf;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread;
+
+use eframe::egui;
+use jiff::Timestamp;
+
+use super::{Import, ImportCount, ProjectDraft, Store};
+use crate::entries::{Snapshot, Task};
+
+pub enum Command {
+    AddTask(Task, Timestamp),
+    Play(i64, Timestamp),
+    Pause(i64, Timestamp),
+    RemoveRow(i64, Timestamp),
+    SaveProject(ProjectDraft),
+    SetArchived(i64, bool),
+    /// Loads sessions from this time onward.
+    LoadFrom(Timestamp),
+    Import(Import),
+}
+
+pub enum Event {
+    Changed(Snapshot),
+    Imported(ImportCount),
+    Failed(String),
+}
+
+#[derive(Clone)]
+pub struct Database {
+    commands: Sender<Command>,
+}
+
+pub struct Events(Receiver<Event>);
+
+impl Events {
+    pub fn try_recv(&self) -> Option<Event> {
+        self.0.try_recv().ok()
+    }
+}
+
+impl Database {
+    pub fn start(path: PathBuf, loaded_from: Timestamp, ctx: egui::Context) -> (Self, Events) {
+        let (commands, command_rx) = mpsc::channel();
+        let (event_tx, events) = mpsc::channel();
+        thread::Builder::new()
+            .name("database".into())
+            .spawn(move || run(path, loaded_from, command_rx, event_tx, ctx))
+            .expect("the operating system must allow a new thread");
+        (Self { commands }, Events(events))
+    }
+
+    pub fn send(&self, command: Command) {
+        // A send fails only after the worker stops, and then the app has
+        // already shown the reason.
+        let _ = self.commands.send(command);
+    }
+}
+
+fn run(
+    path: PathBuf,
+    mut loaded_from: Timestamp,
+    commands: Receiver<Command>,
+    events: Sender<Event>,
+    ctx: egui::Context,
+) {
+    let notify = |event| {
+        if events.send(event).is_ok() {
+            ctx.request_repaint();
+        }
+    };
+    let mut store = match Store::open(&path) {
+        Ok(store) => store,
+        Err(error) => {
+            notify(Event::Failed(format!(
+                "Trackfast cannot open {}: {error}",
+                path.display()
+            )));
+            return;
+        }
+    };
+    let publish = |store: &Store, loaded_from| match store.snapshot(loaded_from) {
+        Ok(snapshot) => notify(Event::Changed(snapshot)),
+        Err(error) => notify(Event::Failed(error.to_string())),
+    };
+    publish(&store, loaded_from);
+    while let Ok(command) = commands.recv() {
+        let result = match command {
+            Command::AddTask(task, at) => store.add_task(&task, at),
+            Command::Play(row, at) => store.play(row, at),
+            Command::Pause(row, at) => store.pause(row, at),
+            Command::RemoveRow(row, at) => store.remove_row(row, at),
+            Command::SaveProject(draft) => store.save_project(&draft).map(|_| ()),
+            Command::SetArchived(project, archived) => store.set_archived(project, archived),
+            Command::LoadFrom(from) => {
+                loaded_from = loaded_from.min(from);
+                Ok(())
+            }
+            Command::Import(data) => store.import(&data).map(|count| {
+                notify(Event::Imported(count));
+            }),
+        };
+        if let Err(error) = result {
+            notify(Event::Failed(error.to_string()));
+        }
+        publish(&store, loaded_from);
+    }
+}

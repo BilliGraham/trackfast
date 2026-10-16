@@ -5,12 +5,12 @@ Use ASD-STE100 sentence structure for prose. Keep necessary technical terms.
 
 ## Scope
 
-The app has a standalone timer model and read-only Toggl sync.
+Trackfast is a local time tracker. Its design is inspired by Toggl Track, but it is not a Toggl client.
 Add features in small steps that the user requests.
-The app signs in with an API token and reads Toggl data. It does not write to Toggl.
-Do not connect the timer model to the interface, persistence, or Toggl writes without a new task.
+All data stays in the local SQLite file. Do not add sync, accounts, or Toggl writes without a new task.
+The Toggl import is read-only and runs only when the user starts it. Use only the official Toggl Track API.
+Do not use Toggl branding in the interface.
 Keep the app native. Do not add a browser engine, telemetry, or a hosted backend.
-Use only the official Toggl Track API.
 
 ## Platforms
 
@@ -23,22 +23,21 @@ Do not report Linux or macOS as tested until those checks run.
 - `src/ui/` draws views and returns `Action` values.
 - `src/app.rs` applies each `Action` after the view returns.
 - `src/model.rs` holds shared interface state and action types.
-- `src/lib.rs` exports the standalone timer model.
-- `src/timer.rs` owns task descriptions and independent timer states.
-- Timer tests supply timestamps from a common monotonic origin. Do not read a clock inside the model.
-- `src/sync.rs` runs all Toggl requests and credential-store calls on one background thread.
-- `src/toggl/` holds the API client, the API types, the token store, and date summaries.
+- `src/entries/` holds the session types and the day and week logic that the views use.
+- `src/db/` owns the SQLite schema. Only the database worker thread opens the file.
+- Make each user action one transaction. Never leave a session or widget row half changed.
+- Change the schema only by adding a step to `MIGRATIONS`. Never edit a released step.
+- `src/import.rs` and `src/toggl/` run the optional Toggl import on a background thread.
+- Never store the import token. Never log credentials or authorization responses.
 - Network and disk work must run outside the interface thread.
-- Future state writes must be atomic and backward compatible.
-- Never log credentials or authorization responses.
+- `src/lib.rs` and `src/timer.rs` are a standalone timer model. The app does not use them.
 - Keep platform code behind target-specific modules or `cfg` blocks.
 - Prefer crates.io dependencies. Pin any future Git dependency to a reviewed commit.
 - Add a dependency only when the current task needs it.
 
-The main window and the widget must share one model when timers exist.
+The main window and the widget read the same `State`.
 Closing the widget must not close the main window.
-Do not implement parallel tasks as repeated server timer starts.
-Read `docs/toggl-boundaries.md` before you change integration behaviour.
+Read `docs/architecture.md` before you change the database. Read `docs/toggl-import.md` before you change the import.
 
 ## Comments
 
@@ -58,4 +57,4 @@ Update `README.md` and the relevant files in `docs/` with user-visible changes.
 Keep `main` linear. Use focused commits. Do not create merge commits.
 Do not rewrite published history without explicit user permission.
 Keep the GitHub repository private under BilliGraham.
-Do not publish releases or add release workflows during scaffold work.
+Do not publish releases or add release workflows without a user request.
