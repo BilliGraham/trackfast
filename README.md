@@ -13,16 +13,35 @@ The GitHub repository is BilliGraham/trackfast. Keep it private.
 - The List view groups the entries since the start of last week by day, with daily and weekly totals.
 - A read-only Projects screen, grouped by workspace.
 - A manual Refresh button.
-- A separate widget that opens from the main window, with three placeholder task rows.
+- A separate widget that opens and closes from the main window, with up to three pinned Toggl entries.
 - An always-on-top request for the widget.
 
 Trackfast does not change any data in Toggl.
-Timer controls, project creation, and the widget tasks are disabled placeholders.
+Timer controls and project creation are disabled placeholders.
 The standalone timer model supports start, stop, resume, and overlapping tasks.
 The interface does not use the model yet.
-Trackfast has no local data cache. It loads the data again after each start.
+Trackfast keeps time data and widget selections in memory. It loads the data again after each start.
 The repository contains no account details or task content from the screenshots.
 The interface uses dark surfaces and pink accents. The design is not final.
+
+## Widget
+
+Open widget shows the running entry on first use. If no entry runs, it shows the most recent entry.
+If there are no entries, the widget shows an empty row.
+
+Move the pointer over the widget. Open the ⋮ menu at the lower left and select Add task.
+The widget holds a maximum of three entries. Add task is disabled when the widget is full.
+The menu also has a Close widget action.
+In the Calendar view, hover over an entry to show its menu with three vertical dots.
+The List view also has this menu for each entry.
+Select Add to widget.
+This also opens the widget.
+The action is disabled when the entry is already selected or the widget is full.
+Use the remove button on a row to remove that selection. This does not stop or change the Toggl entry.
+
+Closing the widget and refreshing Toggl preserve the selected rows.
+Sign-out or app exit clears the selections. The widget does not save them to disk.
+If a selected entry leaves the loaded history, its row shows the last known time and a history notice.
 
 ## Run
 
@@ -83,6 +102,11 @@ See [the timer guide](docs/timer.md) for the model and the TDD sequence.
 - The widget will open from the main window.
 - The widget will hold up to three tasks with independent start and stop controls.
 - More than one timer can run at the same time.
+
+## Fonts
+
+Trackfast bundles Inter and JetBrains Mono from `assets/fonts/`.
+Both fonts use the SIL Open Font License 1.1. The license files are next to the fonts.
 
 ## Documentation
 

@@ -1,5 +1,14 @@
+mod actions;
 mod calendar;
+mod digits;
 mod style;
+mod widget;
+
+pub use widget::{height as widget_height, show as widget};
+
+pub fn widget_background() -> Color32 {
+    style::BACKGROUND
+}
 
 use std::time::Instant;
 
@@ -14,6 +23,10 @@ use crate::toggl::{Snapshot, TimeEntry};
 
 const NO_PROJECT: Color32 = Color32::from_rgb(110, 110, 110);
 const TOKEN_PAGE: &str = "https://track.toggl.com/profile";
+
+pub fn install_fonts(ctx: &egui::Context) {
+    ctx.set_fonts(style::fonts());
+}
 
 pub struct Clock {
     pub now: Timestamp,
@@ -218,8 +231,13 @@ fn timer(
     ui.horizontal(|ui| {
         ui.heading("Timer");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("Open widget").clicked() {
-                actions.push(Action::OpenWidget);
+            let (label, action) = if state.widget_open {
+                ("Close widget", Action::CloseWidget)
+            } else {
+                ("Open widget", Action::OpenWidget)
+            };
+            if ui.button(label).clicked() {
+                actions.push(action);
             }
         });
     });
@@ -230,7 +248,7 @@ fn timer(
             ui.add_enabled(false, egui::Button::new("Start"))
                 .on_disabled_hover_text("Timer control is not available yet.");
             let elapsed = running.map(|entry| entry.elapsed(clock.now));
-            ui.label(RichText::new(clock_or_zero(elapsed)).monospace().size(19.0));
+            digits::label(ui, &clock_or_zero(elapsed), digits::font(19.0), style::TEXT);
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 let text = running.map(description).unwrap_or("No timer running");
                 ui.add(egui::Label::new(RichText::new(text).size(15.0)).truncate())
@@ -253,7 +271,7 @@ fn timer(
                 ui.add_space(16.0);
                 let week_total = calendar_week_total(snapshot, clock, shown_week);
                 ui.weak("WEEK TOTAL");
-                ui.monospace(clock_or_zero(week_total));
+                duration(ui, &clock_or_zero(week_total));
             }
             TimerView::List => {
                 let total = |date| {
@@ -261,10 +279,10 @@ fn timer(
                         .map(|since| summary::total_since(&snapshot.entries, since, clock.now))
                 };
                 ui.weak("Today");
-                ui.monospace(clock_or_zero(total(today)));
+                duration(ui, &clock_or_zero(total(today)));
                 ui.add_space(16.0);
                 ui.weak("This week");
-                ui.monospace(clock_or_zero(total(current_week)));
+                duration(ui, &clock_or_zero(total(current_week)));
             }
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -293,7 +311,7 @@ fn timer(
     ui.add_space(12.0);
     match state.timer_view {
         TimerView::Calendar => calendar::show(ui, state, snapshot, clock, shown_week, actions),
-        TimerView::List => entry_list(ui, snapshot, clock, today),
+        TimerView::List => entry_list(ui, state, snapshot, clock, today, actions),
     }
 }
 
@@ -308,7 +326,14 @@ fn calendar_week_total(
         .then(|| crate::toggl::week::total_between(&snapshot.entries, from, to, clock.now))
 }
 
-fn entry_list(ui: &mut egui::Ui, snapshot: &Snapshot, clock: &Clock, today: Date) {
+fn entry_list(
+    ui: &mut egui::Ui,
+    state: &State,
+    snapshot: &Snapshot,
+    clock: &Clock,
+    today: Date,
+    actions: &mut Vec<Action>,
+) {
     ui.separator();
     let days = summary::days(&snapshot.entries, &clock.tz, clock.now);
     if days.is_empty() {
@@ -325,28 +350,44 @@ fn entry_list(ui: &mut egui::Ui, snapshot: &Snapshot, clock: &Clock, today: Date
                 ui.horizontal(|ui| {
                     ui.strong(day_label(day.date, today));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.monospace(summary::clock(day.total));
+                        duration(ui, &summary::clock(day.total));
                     });
                 });
                 ui.add_space(4.0);
                 for entry in day.entries {
-                    entry_row(ui, snapshot, entry, clock);
+                    ui.push_id(entry.id, |ui| {
+                        entry_row(ui, &state.widget, snapshot, entry, clock, actions)
+                    });
                 }
             }
         });
+}
+
+fn duration(ui: &mut egui::Ui, text: &str) {
+    digits::label(ui, text, digits::font(13.0), style::TEXT);
 }
 
 fn clock_or_zero(duration: Option<jiff::SignedDuration>) -> String {
     summary::clock(duration.unwrap_or_default())
 }
 
-fn entry_row(ui: &mut egui::Ui, snapshot: &Snapshot, entry: &TimeEntry, clock: &Clock) {
+fn entry_row(
+    ui: &mut egui::Ui,
+    widget: &crate::model::widget::Widget,
+    snapshot: &Snapshot,
+    entry: &TimeEntry,
+    clock: &Clock,
+    actions: &mut Vec<Action>,
+) {
     style::card().show(ui, |ui| {
         ui.spacing_mut().interact_size.y = 18.0;
         ui.spacing_mut().item_spacing.y = 4.0;
         ui.set_width(ui.available_width());
         right_aligned_row(ui, |ui| {
-            ui.monospace(summary::clock(entry.elapsed(clock.now)));
+            self::actions::menu(ui, "Entry actions", |ui| {
+                widget::entry_action(ui, widget, entry.id, actions)
+            });
+            duration(ui, &summary::clock(entry.elapsed(clock.now)));
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add(egui::Label::new(description(entry)).truncate())
                     .on_hover_text(description(entry));
@@ -455,34 +496,6 @@ fn project_colour(hex: Option<&str>) -> Color32 {
         .unwrap_or(NO_PROJECT)
 }
 
-pub fn widget(ui: &mut egui::Ui) {
-    style::apply(ui);
-    ui.spacing_mut().button_padding = egui::vec2(10.0, 4.0);
-    ui.spacing_mut().interact_size.y = 26.0;
-    ui.label(RichText::new("Pinned tasks").size(16.0).strong());
-    ui.add_space(4.0);
-    for slot in 1..=3 {
-        style::card().inner_margin(8).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    ui.label(format!("Task {slot}"));
-                    ui.label(
-                        RichText::new("No task selected")
-                            .size(11.0)
-                            .color(style::MUTED),
-                    );
-                });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_enabled(false, egui::Button::new("Start"))
-                        .on_disabled_hover_text("Timer controls are not available yet.");
-                    ui.monospace("0:00:00");
-                });
-            });
-        });
-    }
-}
-
 fn right_aligned_row(ui: &mut egui::Ui, contents: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), contents);
@@ -515,6 +528,7 @@ mod tests {
 
     fn sample_snapshot() -> Snapshot {
         let entry = |start: &str, duration: i64, project_id| crate::toggl::TimeEntry {
+            id: start.parse::<Timestamp>().unwrap().as_second(),
             project_id,
             description: Some("Review the calendar layout".into()),
             start: start.parse().unwrap(),
@@ -570,6 +584,7 @@ mod tests {
         time: f64,
         events: Vec<egui::Event>,
     ) {
+        ctx.set_fonts(style::fonts());
         let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(760.0, 480.0));
         let input = egui::RawInput {
             screen_rect: Some(rect),

@@ -62,6 +62,7 @@ fn active_by_default() -> bool {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct TimeEntry {
+    pub id: i64,
     #[serde(default)]
     pub project_id: Option<i64>,
     #[serde(default)]
@@ -148,6 +149,8 @@ mod tests {
              "start": "2026-10-12T10:00:00Z", "stop": null, "duration": -1}
         ]"#;
         let entries: Vec<TimeEntry> = serde_json::from_str(json).unwrap();
+        assert_eq!(entries[0].id, 1);
+        assert_eq!(entries[1].id, 2);
         assert!(!entries[0].is_running());
         assert_eq!(entries[0].elapsed(Timestamp::UNIX_EPOCH).as_secs(), 5400);
         assert!(entries[1].is_running());
@@ -158,6 +161,7 @@ mod tests {
     #[test]
     fn older_entries_extend_the_loaded_range_without_duplicates() {
         let entry = |start: &str| TimeEntry {
+            id: start.parse::<Timestamp>().unwrap().as_second(),
             project_id: None,
             description: None,
             start: start.parse().unwrap(),
@@ -188,9 +192,10 @@ mod tests {
 
     #[test]
     fn duration_only_entries_keep_their_completed_duration() {
-        let entry: TimeEntry =
-            serde_json::from_str(r#"{"start":"2026-10-16T08:00:00Z","stop":null,"duration":3600}"#)
-                .unwrap();
+        let entry: TimeEntry = serde_json::from_str(
+            r#"{"id": 1, "start":"2026-10-16T08:00:00Z","stop":null,"duration":3600}"#,
+        )
+        .unwrap();
         let now = "2026-10-16T13:00:00Z".parse().unwrap();
         assert!(!entry.is_running());
         assert_eq!(entry.elapsed(now).as_secs(), 3600);

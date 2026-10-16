@@ -20,6 +20,7 @@ fn main() -> eframe::Result {
         options,
         Box::new(|creation| {
             creation.egui_ctx.set_visuals(egui::Visuals::dark());
+            ui::install_fonts(&creation.egui_ctx);
             Ok(Box::new(app::App::new(creation.egui_ctx.clone())))
         }),
     )

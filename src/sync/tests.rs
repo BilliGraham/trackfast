@@ -237,3 +237,19 @@ fn earlier_entries_need_a_signed_in_client() {
     assert_eq!(worker.backend.fetches, 0);
     assert_eq!(events.try_iter().count(), 0);
 }
+
+#[test]
+fn rejected_sign_in_allows_an_immediate_retry() {
+    let (mut worker, events) = worker(Err(ApiError::InvalidToken));
+    worker.backend.saved = false;
+    worker.handle(Command::SignIn(ApiToken::new("wrong-token").unwrap()));
+    assert!(
+        !events
+            .try_iter()
+            .any(|event| matches!(event, Event::RequestLimit(Some(_))))
+    );
+    worker.backend.responses.push_back(Ok(snapshot()));
+    worker.handle(Command::SignIn(ApiToken::new("right-token").unwrap()));
+    assert_eq!(worker.backend.fetches, 2);
+    assert!(worker.client.is_some());
+}

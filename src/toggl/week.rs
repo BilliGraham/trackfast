@@ -179,6 +179,7 @@ mod tests {
     fn entry(start: &str, seconds: i64) -> TimeEntry {
         let start: Timestamp = start.parse().unwrap();
         TimeEntry {
+            id: start.as_second(),
             project_id: None,
             description: None,
             start,

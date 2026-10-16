@@ -27,7 +27,9 @@ If token removal fails, the interface shows the error and remains signed out.
 HTTP 402 and 429 mean that the request quota is used up.
 Trackfast blocks all sync attempts for one hour and does not retry automatically.
 Startup, sign-in, and refresh share one worker-owned budget of 30 request attempts in a rolling hour.
-The worker enforces a four-minute pause between sync attempts. Sign-out does not reset the budget.
+The worker enforces a four-minute pause between sync attempts.
+A rejected token ends that pause, so the user can paste a corrected token at once.
+The rejected request still counts against the hourly budget. Sign-out does not reset the budget.
 Each HTTP request consumes budget before transmission, including requests that fail.
 The budget belongs to the current process. It does not account for other apps or survive a restart.
 The client requires HTTPS and rejects redirects.

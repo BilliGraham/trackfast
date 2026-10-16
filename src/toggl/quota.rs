@@ -37,6 +37,12 @@ impl RequestQuota {
         Ok(())
     }
 
+    /// A rejected token loads no data, so the user can correct it at once.
+    /// Its request still counts against the hourly budget.
+    pub fn end_sync_pause(&mut self) {
+        self.sync_after = None;
+    }
+
     pub fn block_after_quota_error(&mut self, now: Instant) {
         self.blocked_until = Some(now + WINDOW);
     }
@@ -132,6 +138,22 @@ mod tests {
             Err(start + SYNC_INTERVAL)
         );
         quota.begin_sync(start + SYNC_INTERVAL).unwrap();
+    }
+
+    #[test]
+    fn ending_the_sync_pause_keeps_the_hourly_budget() {
+        let start = Instant::now();
+        let mut quota = RequestQuota::default();
+        quota.begin_sync(start).unwrap();
+        quota.record_request(start).unwrap();
+        quota.end_sync_pause();
+        let retry = start + Duration::from_secs(1);
+        quota.begin_sync(retry).unwrap();
+        for _ in 0..28 {
+            quota.record_request(retry).unwrap();
+        }
+        quota.end_sync_pause();
+        assert_eq!(quota.begin_sync(retry), Err(start + WINDOW));
     }
 
     #[test]

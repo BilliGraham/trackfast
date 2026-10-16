@@ -191,8 +191,10 @@ impl<B: Backend> Worker<B> {
         }
         self.notify(Event::Busy);
         let result = self.backend.fetch(&candidate, &mut self.quota);
-        if matches!(result, Err(ApiError::QuotaReached)) {
-            self.quota.block_after_quota_error(Instant::now());
+        match result {
+            Err(ApiError::QuotaReached) => self.quota.block_after_quota_error(Instant::now()),
+            Err(ApiError::InvalidToken) => self.quota.end_sync_pause(),
+            _ => {}
         }
         self.notify(Event::RequestLimit(self.quota.retry_at(Instant::now())));
         match result {

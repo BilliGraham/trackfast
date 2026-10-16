@@ -2,7 +2,7 @@ use eframe::egui::{self, Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec
 use jiff::Timestamp;
 use jiff::civil::Date;
 
-use super::{Clock, description, project_colour, style};
+use super::{Clock, description, digits, project_colour, style};
 use crate::model::{Action, State};
 use crate::toggl::week::{self, Block};
 use crate::toggl::{Snapshot, summary};
@@ -11,6 +11,9 @@ const GUTTER: f32 = 72.0;
 const HEADER_HEIGHT: f32 = 54.0;
 const MIN_BLOCK_HEIGHT: f32 = 18.0;
 const BLOCK_PADDING: f32 = 6.0;
+const MENU_WIDTH: f32 = 16.0;
+const MENU_HEIGHT: f32 = 18.0;
+const DOT_RADIUS: f32 = 1.5;
 const NOW_LINE: Color32 = Color32::from_rgb(226, 85, 85);
 const DEFAULT_SCROLL_HOUR: f32 = 7.5;
 
@@ -98,16 +101,20 @@ pub fn show(
         for (index, day_blocks) in blocks.iter().enumerate() {
             let left = rect.left() + GUTTER + column_width * index as f32;
             for block in day_blocks {
-                entry_block(
-                    ui,
-                    snapshot,
-                    clock,
-                    block,
-                    left,
-                    column_width,
-                    rect.top(),
-                    hour_height,
-                );
+                ui.push_id((days[index], block.entry.id), |ui| {
+                    entry_block(
+                        ui,
+                        &state.widget,
+                        snapshot,
+                        clock,
+                        block,
+                        left,
+                        column_width,
+                        rect.top(),
+                        hour_height,
+                        actions,
+                    );
+                });
             }
             if days[index] == clock.today() {
                 now_line(
@@ -232,7 +239,7 @@ fn header(
             number_centre,
             Align2::CENTER_CENTER,
             day.day().to_string(),
-            FontId::proportional(22.0),
+            FontId::new(22.0, style::semibold()),
             if is_today { style::ACCENT } else { style::TEXT },
         );
         let weekday = day.strftime("%a").to_string().to_uppercase();
@@ -251,11 +258,12 @@ fn header(
             (Some(from), Some(to)) => week::total_between(&snapshot.entries, from, to, clock.now),
             _ => jiff::SignedDuration::ZERO,
         };
-        painter.text(
+        digits::paint(
+            &painter,
             pos2(left + 44.0, rect.center().y + 1.0),
             Align2::LEFT_TOP,
-            summary::clock(total),
-            FontId::monospace(11.0),
+            &summary::clock(total),
+            FontId::proportional(11.5),
             style::MUTED,
         );
     }
@@ -301,7 +309,8 @@ fn block_fill(colour: Color32) -> Color32 {
 
 #[allow(clippy::too_many_arguments)]
 fn entry_block(
-    ui: &egui::Ui,
+    ui: &mut egui::Ui,
+    widget: &crate::model::widget::Widget,
     snapshot: &Snapshot,
     clock: &Clock,
     block: &Block,
@@ -309,6 +318,7 @@ fn entry_block(
     column_width: f32,
     top: f32,
     hour_height: f32,
+    actions: &mut Vec<Action>,
 ) {
     let entry = block.entry;
     let lane_width = (column_width - 4.0) / block.columns as f32;
@@ -330,27 +340,29 @@ fn entry_block(
             egui::StrokeKind::Inside,
         );
     }
-    let text_rect = rect.shrink(BLOCK_PADDING);
+    if !ui.is_rect_visible(rect) {
+        return;
+    }
+    let room_for_duration = height > 64.0;
+    let mut text_rect = rect.shrink(BLOCK_PADDING);
+    if !room_for_duration {
+        text_rect.max.x = (text_rect.right() - MENU_WIDTH).max(text_rect.left() + 1.0);
+    }
     let text_painter = ui.painter_at(text_rect.expand2(vec2(0.0, BLOCK_PADDING - 2.0)));
     let wrap = text_rect.width().max(1.0);
-    let duration = text_painter.layout_no_wrap(
-        summary::clock(entry.elapsed(clock.now)),
-        FontId::monospace(11.0),
-        style::TEXT,
-    );
+    let duration = summary::clock(entry.elapsed(clock.now));
+    let duration_font = digits::font(11.5);
+    let duration_height = digits::size(ui.ctx(), &duration, &duration_font).y;
     let mut cursor = rect.top() + if height < 26.0 { 2.0 } else { BLOCK_PADDING };
-    let room_for_duration = height > 64.0;
+    let title_font = FontId::new(12.5, style::semibold());
+    let first_line_centre =
+        cursor + ui.ctx().fonts_mut(|fonts| fonts.row_height(&title_font)) / 2.0;
     let text_bottom = if room_for_duration {
-        rect.bottom() - BLOCK_PADDING - duration.size().y - 2.0
+        rect.bottom() - BLOCK_PADDING - duration_height - 2.0
     } else {
         rect.bottom()
     };
-    let title = text_painter.layout(
-        description(entry).to_owned(),
-        FontId::proportional(12.5),
-        style::TEXT,
-        wrap,
-    );
+    let title = text_painter.layout(description(entry).to_owned(), title_font, style::TEXT, wrap);
     let title_height = title.size().y;
     ui.painter_at(Rect::from_min_max(
         pos2(text_rect.left(), rect.top()),
@@ -370,12 +382,12 @@ fn entry_block(
         }
     }
     if room_for_duration {
-        text_painter.galley(
-            pos2(
-                text_rect.left(),
-                rect.bottom() - BLOCK_PADDING - duration.size().y,
-            ),
-            duration,
+        digits::paint(
+            &text_painter,
+            pos2(text_rect.left(), rect.bottom() - BLOCK_PADDING),
+            Align2::LEFT_BOTTOM,
+            &duration,
+            duration_font,
             style::TEXT,
         );
     }
@@ -400,6 +412,30 @@ fn entry_block(
             summary::clock(entry.elapsed(clock.now))
         ));
     });
+    // The dots line up with the duration row in tall blocks and with the
+    // title in short ones, inset by the same padding as the text.
+    let menu_centre = pos2(
+        rect.right() - BLOCK_PADDING - DOT_RADIUS,
+        if room_for_duration {
+            rect.bottom() - BLOCK_PADDING - duration_height / 2.0
+        } else {
+            first_line_centre
+        },
+    );
+    let menu_rect =
+        Rect::from_center_size(menu_centre, vec2(MENU_WIDTH, MENU_HEIGHT)).intersect(rect);
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .id_salt("entry-actions")
+            .max_rect(menu_rect),
+        |ui| {
+            ui.spacing_mut().button_padding = egui::Vec2::ZERO;
+            ui.spacing_mut().interact_size = menu_rect.size();
+            super::actions::menu_on_hover(ui, "Entry actions", rect, |ui| {
+                super::widget::entry_action(ui, widget, entry.id, actions);
+            });
+        },
+    );
 }
 
 fn now_line(
@@ -446,6 +482,172 @@ fn not_loaded(ui: &mut egui::Ui, state: &State, grid: Rect, actions: &mut Vec<Ac
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn snapshot() -> Snapshot {
+        Snapshot {
+            user: crate::toggl::User {
+                fullname: None,
+                beginning_of_week: 1,
+            },
+            projects: Vec::new(),
+            workspaces: Vec::new(),
+            entries: (1..=4)
+                .map(|id| crate::toggl::TimeEntry {
+                    id,
+                    project_id: None,
+                    description: Some(format!("Task {id}")),
+                    start: "2026-10-16T08:00:00Z".parse().unwrap(),
+                    stop: Some("2026-10-16T10:00:00Z".parse().unwrap()),
+                    duration: 7200,
+                })
+                .collect(),
+            loaded_from: "2026-10-05T00:00:00Z".parse().unwrap(),
+            fetched_at: "2026-10-16T12:00:00Z".parse().unwrap(),
+        }
+    }
+
+    fn draw_entry(
+        ctx: &egui::Context,
+        widget: &crate::model::widget::Widget,
+        end: f32,
+        events: Vec<egui::Event>,
+    ) -> (Vec<Action>, egui::FullOutput) {
+        let snapshot = snapshot();
+        let clock = Clock {
+            now: snapshot.fetched_at,
+            tz: jiff::tz::TimeZone::UTC,
+        };
+        let block = Block {
+            entry: &snapshot.entries[3],
+            start: 0.0,
+            end,
+            column: 0,
+            columns: 1,
+        };
+        let mut actions = Vec::new();
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(400.0, 260.0))),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    style::apply(ui);
+                    entry_block(
+                        ui,
+                        widget,
+                        &snapshot,
+                        &clock,
+                        &block,
+                        10.0,
+                        120.0,
+                        10.0,
+                        60.0,
+                        &mut actions,
+                    );
+                });
+            },
+        );
+        output.textures_delta.clear();
+        (actions, output)
+    }
+
+    fn click(pos: egui::Pos2) -> Vec<egui::Event> {
+        vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            },
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            },
+        ]
+    }
+
+    fn hover_block() -> Vec<egui::Event> {
+        vec![egui::Event::PointerMoved(egui::pos2(30.0, 15.0))]
+    }
+
+    fn menu_position(output: &egui::FullOutput) -> egui::Pos2 {
+        let dots: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Circle(circle) if circle.radius == 1.5 => Some(circle.center),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(dots.len(), 3);
+        assert!(
+            dots.windows(2)
+                .all(|pair| pair[0].x == pair[1].x && pair[0].y < pair[1].y)
+        );
+        dots[1]
+    }
+
+    #[test]
+    fn calendar_menu_pins_an_entry_and_obeys_widget_limits() {
+        for selection in [vec![], vec![4], vec![1, 2, 3]] {
+            let ctx = egui::Context::default();
+            crate::ui::install_fonts(&ctx);
+            let mut widget = crate::model::widget::Widget::default();
+            for id in &selection {
+                widget.pin(*id, &snapshot());
+            }
+            let (_, output) = draw_entry(&ctx, &widget, 120.0, hover_block());
+            let menu = menu_position(&output);
+            draw_entry(&ctx, &widget, 120.0, click(menu));
+            let (_, output) = draw_entry(&ctx, &widget, 120.0, vec![]);
+            let add = output
+                .shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text) if text.galley.text() == "Add to widget" => {
+                        Some(text.pos + text.galley.rect.center().to_vec2())
+                    }
+                    _ => None,
+                })
+                .expect("The calendar menu must show Add to widget.");
+            let (actions, _) = draw_entry(&ctx, &widget, 120.0, click(add));
+            assert_eq!(
+                actions
+                    .iter()
+                    .any(|action| matches!(action, Action::PinEntry(4))),
+                selection.is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn short_calendar_entries_show_a_vertical_menu() {
+        let ctx = egui::Context::default();
+        crate::ui::install_fonts(&ctx);
+        let (_, output) = draw_entry(&ctx, &Default::default(), 1.0, hover_block());
+        let pos = menu_position(&output);
+        assert!((11.0..27.0).contains(&pos.y));
+    }
+
+    #[test]
+    fn calendar_menu_hides_until_the_entry_is_hovered() {
+        let ctx = egui::Context::default();
+        crate::ui::install_fonts(&ctx);
+        let (_, output) = draw_entry(&ctx, &Default::default(), 120.0, vec![]);
+        let dots = output
+            .shapes
+            .iter()
+            .filter(
+                |shape| matches!(&shape.shape, egui::Shape::Circle(circle) if circle.radius == 1.5),
+            )
+            .count();
+        assert_eq!(dots, 0);
+    }
 
     #[test]
     fn hour_labels_use_a_twelve_hour_clock() {

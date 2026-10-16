@@ -3,6 +3,7 @@
 | Module | Responsibility |
 | --- | --- |
 | `src/main.rs` | Start the native window and select the initial theme. |
+| `src/model/widget.rs` | Own up to three selected entries and their last known data. |
 | `src/model.rs` | Hold navigation state, Toggl connection state, and action types. |
 | `src/lib.rs` | Export the standalone timer module. |
 | `src/timer.rs` | Hold task descriptions, timer state, and seven unit tests. |
@@ -27,6 +28,12 @@ so the application gives the view a draft string. The application takes and clea
 The field clears its undo history after input. Submission and sign-out also remove its stored edit state.
 
 The widget is a second native viewport in the same process.
+Both windows read the same `State`. Widget actions return to `App` after the widget view returns.
+Toggl entry IDs identify selections. The model rejects duplicate selections and a fourth row.
+Refreshes update selected entries without replacing their IDs or changing their order.
+Missing entries keep their last known data. A missing running entry stops accumulating time until it appears in a snapshot again.
+Sign-out clears the selected data and closes the widget.
+Selections stay in memory only. The standalone timer model remains separate.
 It opens from the main window, not from the Toggl website.
 It requests the always-on-top window level from the operating system.
 Some window managers ignore or restrict that request.

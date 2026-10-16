@@ -1,8 +1,11 @@
+pub mod widget;
+
 use std::time::{Duration, Instant};
 
 use jiff::civil::Date;
 
 use crate::toggl::Snapshot;
+use widget::Widget;
 
 pub const HOUR_HEIGHTS: [f32; 4] = [36.0, 48.0, 60.0, 84.0];
 const DEFAULT_ZOOM: usize = 2;
@@ -87,15 +90,58 @@ impl Toggl {
 pub struct State {
     pub screen: Screen,
     pub widget_open: bool,
+    pub widget: Widget,
     pub timer_view: TimerView,
     pub calendar: Calendar,
     pub toggl: Toggl,
+}
+
+impl State {
+    pub fn open_widget(&mut self) {
+        if self.toggl.connection != Connection::SignedIn {
+            return;
+        }
+        if let Some(snapshot) = &self.toggl.snapshot {
+            self.widget.initialize(snapshot);
+        }
+        self.widget_open = true;
+    }
+
+    pub fn pin_entry(&mut self, id: i64) -> bool {
+        if self.toggl.connection != Connection::SignedIn {
+            return false;
+        }
+        let Some(snapshot) = &self.toggl.snapshot else {
+            return false;
+        };
+        if !self.widget.pin(id, snapshot) {
+            return false;
+        }
+        self.widget_open = true;
+        true
+    }
+
+    pub fn refresh_widget(&mut self) {
+        if let Some(snapshot) = &self.toggl.snapshot {
+            if self.widget_open {
+                self.widget.initialize(snapshot);
+            }
+            self.widget.refresh(snapshot);
+        }
+    }
+
+    pub fn clear_widget(&mut self) {
+        self.widget.clear();
+        self.widget_open = false;
+    }
 }
 
 pub enum Action {
     Navigate(Screen),
     OpenWidget,
     CloseWidget,
+    PinEntry(i64),
+    UnpinEntry(i64),
     SignIn,
     Refresh,
     SignOut,
