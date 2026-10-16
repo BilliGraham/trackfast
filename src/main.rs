@@ -2,6 +2,8 @@
 
 mod app;
 mod model;
+mod sync;
+mod toggl;
 mod ui;
 
 use eframe::egui;
@@ -18,7 +20,7 @@ fn main() -> eframe::Result {
         options,
         Box::new(|creation| {
             creation.egui_ctx.set_visuals(egui::Visuals::dark());
-            Ok(Box::new(app::App::default()))
+            Ok(Box::new(app::App::new(creation.egui_ctx.clone())))
         }),
     )
 }

@@ -5,12 +5,12 @@ Use ASD-STE100 sentence structure for prose. Keep necessary technical terms.
 
 ## Scope
 
-The app has a scaffold and a standalone timer model.
+The app has a standalone timer model and read-only Toggl sync.
 Add features in small steps that the user requests.
-The current step adds the timer model and seven tests.
-Do not connect the model to the interface, authentication, persistence, or sync without a new task.
+The app signs in with an API token and reads Toggl data. It does not write to Toggl.
+Do not connect the timer model to the interface, persistence, or Toggl writes without a new task.
 Keep the app native. Do not add a browser engine, telemetry, or a hosted backend.
-Use official Toggl APIs when integration work starts.
+Use only the official Toggl Track API.
 
 ## Platforms
 
@@ -26,7 +26,9 @@ Do not report Linux or macOS as tested until those checks run.
 - `src/lib.rs` exports the standalone timer model.
 - `src/timer.rs` owns task descriptions and independent timer states.
 - Timer tests supply timestamps from a common monotonic origin. Do not read a clock inside the model.
-- Future network and disk work must run outside the interface thread.
+- `src/sync.rs` runs all Toggl requests and credential-store calls on one background thread.
+- `src/toggl/` holds the API client, the API types, the token store, and date summaries.
+- Network and disk work must run outside the interface thread.
 - Future state writes must be atomic and backward compatible.
 - Never log credentials or authorization responses.
 - Keep platform code behind target-specific modules or `cfg` blocks.
