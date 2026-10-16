@@ -15,6 +15,11 @@ Each sync sends two requests to `https://api.track.toggl.com/api/v9`:
 1. `GET /me?with_related_data=true` loads the user, workspaces, and projects.
 2. `GET /me/time_entries` loads entries from local midnight at the start of last week until 24 hours from now.
 
+The Calendar view can show earlier weeks. If the shown week starts before the loaded range,
+one `GET /me/time_entries` request loads the entries from that week start up to the loaded range.
+The app does not repeat a failed week request automatically. Select Load week to try again.
+A refresh replaces the snapshot, so earlier weeks need a new request after a refresh.
+
 Requests use HTTP basic authentication. The user name is the API token and the password is `api_token`.
 HTTP 401 and 403 mean that Toggl did not accept the token.
 The worker removes the rejected client and saved token, then returns the interface to sign-in.

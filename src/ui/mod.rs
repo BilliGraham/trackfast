@@ -1,3 +1,4 @@
+mod calendar;
 mod style;
 
 use std::time::Instant;
@@ -7,7 +8,7 @@ use jiff::Timestamp;
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
 
-use crate::model::{Action, Connection, Screen, State, Toggl};
+use crate::model::{Action, Connection, Screen, State, TimerView, Toggl};
 use crate::toggl::summary;
 use crate::toggl::{Snapshot, TimeEntry};
 
@@ -64,7 +65,7 @@ pub fn shell(
                 }
                 (_, Connection::SignedIn, None) => not_loaded(ui, toggl, &mut actions),
                 (Screen::Timer, Connection::SignedIn, Some(snapshot)) => {
-                    timer(ui, toggl, snapshot, clock, &mut actions)
+                    timer(ui, state, snapshot, clock, &mut actions)
                 }
                 (Screen::Projects, Connection::SignedIn, Some(snapshot)) => projects(ui, snapshot),
             }
@@ -207,11 +208,12 @@ fn request_wait_hint(response: egui::Response, toggl: &Toggl) -> egui::Response 
 
 fn timer(
     ui: &mut egui::Ui,
-    toggl: &Toggl,
+    state: &State,
     snapshot: &Snapshot,
     clock: &Clock,
     actions: &mut Vec<Action>,
 ) {
+    let toggl = &state.toggl;
     let running = snapshot.running();
     ui.horizontal(|ui| {
         ui.heading("Timer");
@@ -242,23 +244,29 @@ fn timer(
     });
     ui.add_space(16.0);
     let today = clock.today();
-    let week = summary::week_start(today, snapshot.user.beginning_of_week);
-    let total = |date| {
-        summary::start_of_day(date, &clock.tz)
-            .map(|since| summary::total_since(&snapshot.entries, since, clock.now))
-    };
-    ui.horizontal_wrapped(|ui| {
-        ui.weak("Today");
-        ui.monospace(clock_or_zero(total(today)));
-        ui.add_space(16.0);
-        ui.weak("This week");
-        ui.monospace(clock_or_zero(total(week)));
-    });
-    ui.add_space(12.0);
-    ui.separator();
-    ui.add_space(8.0);
+    let current_week = summary::week_start(today, snapshot.user.beginning_of_week);
+    let shown_week = state.calendar.week.unwrap_or(current_week);
     ui.horizontal(|ui| {
-        ui.strong("Time entries");
+        match state.timer_view {
+            TimerView::Calendar => {
+                calendar::navigator(ui, shown_week, current_week, actions);
+                ui.add_space(16.0);
+                let week_total = calendar_week_total(snapshot, clock, shown_week);
+                ui.weak("WEEK TOTAL");
+                ui.monospace(clock_or_zero(week_total));
+            }
+            TimerView::List => {
+                let total = |date| {
+                    summary::start_of_day(date, &clock.tz)
+                        .map(|since| summary::total_since(&snapshot.entries, since, clock.now))
+                };
+                ui.weak("Today");
+                ui.monospace(clock_or_zero(total(today)));
+                ui.add_space(16.0);
+                ui.weak("This week");
+                ui.monospace(clock_or_zero(total(current_week)));
+            }
+        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             refresh_button(ui, toggl, "Refresh", actions);
             if toggl.busy {
@@ -266,10 +274,41 @@ fn timer(
             } else {
                 ui.weak(format!("Synced {}", clock.local_time(snapshot.fetched_at)));
             }
+            ui.add_space(12.0);
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (view, label) in [
+                (TimerView::List, "List view"),
+                (TimerView::Calendar, "Calendar"),
+            ] {
+                if ui
+                    .add(egui::Button::selectable(state.timer_view == view, label))
+                    .clicked()
+                {
+                    actions.push(Action::ShowTimerView(view));
+                }
+            }
         });
     });
     problem(ui, toggl);
     ui.add_space(12.0);
+    match state.timer_view {
+        TimerView::Calendar => calendar::show(ui, state, snapshot, clock, shown_week, actions),
+        TimerView::List => entry_list(ui, snapshot, clock, today),
+    }
+}
+
+fn calendar_week_total(
+    snapshot: &Snapshot,
+    clock: &Clock,
+    week: Date,
+) -> Option<jiff::SignedDuration> {
+    let from = summary::start_of_day(week, &clock.tz)?;
+    let to = summary::start_of_day(crate::toggl::week::shift(week, 1), &clock.tz)?;
+    (from >= snapshot.loaded_from)
+        .then(|| crate::toggl::week::total_between(&snapshot.entries, from, to, clock.now))
+}
+
+fn entry_list(ui: &mut egui::Ui, snapshot: &Snapshot, clock: &Clock, today: Date) {
     ui.separator();
     let days = summary::days(&snapshot.entries, &clock.tz, clock.now);
     if days.is_empty() {
@@ -472,6 +511,57 @@ mod tests {
         assert_eq!(day_label(today, today), "Today");
         assert_eq!(day_label(date(2026, 10, 15), today), "Yesterday");
         assert_eq!(day_label(date(2026, 10, 12), today), "Mon 12 Oct");
+    }
+
+    fn sample_snapshot() -> Snapshot {
+        let entry = |start: &str, duration: i64, project_id| crate::toggl::TimeEntry {
+            project_id,
+            description: Some("Review the calendar layout".into()),
+            start: start.parse().unwrap(),
+            stop: None,
+            duration,
+        };
+        Snapshot {
+            user: crate::toggl::User {
+                fullname: None,
+                beginning_of_week: 1,
+            },
+            workspaces: Vec::new(),
+            projects: serde_json::from_str(
+                r##"[{"id": 3, "workspace_id": 7, "name": "Site", "color": "#06aaf5"}]"##,
+            )
+            .unwrap(),
+            entries: vec![
+                entry("2026-10-16T12:00:00Z", -1, Some(3)),
+                entry("2026-10-15T10:00:00Z", 3 * 3600, Some(3)),
+                entry("2026-10-15T11:00:00Z", 3600, None),
+                entry("2026-10-14T23:30:00Z", 3600, None),
+                entry("2026-10-13T09:00:00Z", 60, Some(99)),
+            ],
+            loaded_from: "2026-10-05T00:00:00Z".parse().unwrap(),
+            fetched_at: "2026-10-16T13:00:00Z".parse().unwrap(),
+        }
+    }
+
+    #[test]
+    fn calendar_and_list_views_draw_every_week_state() {
+        let ctx = egui::Context::default();
+        let mut state = State::default();
+        state.toggl.connection = Connection::SignedIn;
+        state.toggl.snapshot = Some(sample_snapshot());
+        let mut draft = String::new();
+        let weeks = [None, Some(date(2026, 10, 5)), Some(date(2026, 9, 28))];
+        for (step, week) in weeks.into_iter().enumerate() {
+            state.calendar.week = week;
+            for zoom in [0, 3] {
+                state.calendar.zoom = zoom;
+                draw(&ctx, &state, &mut draft, step as f64, vec![]);
+            }
+        }
+        state.toggl.busy = true;
+        draw(&ctx, &state, &mut draft, 10.0, vec![]);
+        state.timer_view = TimerView::List;
+        draw(&ctx, &state, &mut draft, 11.0, vec![]);
     }
     fn draw(
         ctx: &egui::Context,

@@ -13,6 +13,8 @@
 | `src/toggl/quota.rs` | Count requests and calculate sync deadlines with a monotonic clock. |
 | `src/toggl/credentials.rs` | Read, write, and delete the API token in the credential store. |
 | `src/toggl/summary.rs` | Group entries by local day and calculate totals. |
+| `src/toggl/week.rs` | Split entries at local midnight, place overlapping entries in lanes, and total projects. |
+| `src/ui/calendar.rs` | Draw the week navigator, project shares, day headers, and the hour grid. |
 
 ## Interface flow
 

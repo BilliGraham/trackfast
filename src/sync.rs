@@ -5,14 +5,20 @@ use std::thread;
 use std::time::Instant;
 
 use eframe::egui;
+use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
 use crate::toggl::quota::RequestQuota;
-use crate::toggl::{ApiError, ApiToken, Client, Snapshot, credentials};
+use crate::toggl::{ApiError, ApiToken, Client, Snapshot, TimeEntry, credentials};
 
 pub enum Command {
     SignIn(ApiToken),
     Refresh,
+    /// Loads the entries that started from `from` up to `to`.
+    LoadEarlier {
+        from: Timestamp,
+        to: Timestamp,
+    },
     SignOut,
 }
 
@@ -25,6 +31,11 @@ pub enum Event {
     Loaded {
         snapshot: Snapshot,
         problem: Option<String>,
+    },
+    EarlierLoaded {
+        from: Timestamp,
+        to: Timestamp,
+        entries: Vec<TimeEntry>,
     },
     Failed {
         problem: String,
@@ -71,6 +82,13 @@ trait Backend {
     fn save_token(&mut self, token: &ApiToken) -> Result<(), String>;
     fn delete_token(&mut self) -> Result<(), String>;
     fn fetch(&mut self, client: &Client, quota: &mut RequestQuota) -> Result<Snapshot, ApiError>;
+    fn fetch_entries(
+        &mut self,
+        client: &Client,
+        from: Timestamp,
+        to: Timestamp,
+        quota: &mut RequestQuota,
+    ) -> Result<Vec<TimeEntry>, ApiError>;
 }
 
 struct SystemBackend;
@@ -90,6 +108,16 @@ impl Backend for SystemBackend {
 
     fn fetch(&mut self, client: &Client, quota: &mut RequestQuota) -> Result<Snapshot, ApiError> {
         client.fetch(&TimeZone::system(), quota)
+    }
+
+    fn fetch_entries(
+        &mut self,
+        client: &Client,
+        from: Timestamp,
+        to: Timestamp,
+        quota: &mut RequestQuota,
+    ) -> Result<Vec<TimeEntry>, ApiError> {
+        client.fetch_entries(from, to, quota)
     }
 }
 
@@ -113,6 +141,7 @@ impl<B: Backend> Worker<B> {
         match command {
             Command::SignIn(token) => self.load(Some(token)),
             Command::Refresh => self.load(None),
+            Command::LoadEarlier { from, to } => self.load_earlier(from, to),
             Command::SignOut => {
                 self.client = None;
                 let problem = self
@@ -197,6 +226,44 @@ impl<B: Backend> Worker<B> {
                 self.notify(Event::Failed {
                     problem: error.to_string(),
                     signed_in: self.client.is_some(),
+                });
+            }
+        }
+    }
+
+    fn load_earlier(&mut self, from: Timestamp, to: Timestamp) {
+        let Some(client) = self.client.take() else {
+            return;
+        };
+        self.notify(Event::Busy);
+        let result = self
+            .backend
+            .fetch_entries(&client, from, to, &mut self.quota);
+        if matches!(result, Err(ApiError::QuotaReached)) {
+            self.quota.block_after_quota_error(Instant::now());
+        }
+        self.notify(Event::RequestLimit(self.quota.retry_at(Instant::now())));
+        match result {
+            Ok(entries) => {
+                self.client = Some(client);
+                self.notify(Event::EarlierLoaded { from, to, entries });
+            }
+            Err(ApiError::InvalidToken) => {
+                let mut problem = ApiError::InvalidToken.to_string();
+                if let Err(error) = self.backend.delete_token() {
+                    problem.push_str(&format!(
+                        " Trackfast cannot remove the saved token: {error}"
+                    ));
+                }
+                self.notify(Event::SignedOut {
+                    problem: Some(problem),
+                });
+            }
+            Err(error) => {
+                self.client = Some(client);
+                self.notify(Event::Failed {
+                    problem: error.to_string(),
+                    signed_in: true,
                 });
             }
         }

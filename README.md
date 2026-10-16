@@ -7,8 +7,10 @@ The GitHub repository is BilliGraham/trackfast. Keep it private.
 ## Current scope
 
 - Sign-in with a Toggl Track API token, kept in the credential store of the operating system.
-- A read-only Timer screen with the running entry and the entries since the start of last week.
-- Entries grouped by day, with daily and weekly totals.
+- A read-only Timer screen with the running entry, a Calendar view, and a List view.
+- The Calendar view shows one week on an hour grid, with day totals, a week total, and project shares.
+- Use the arrows to show earlier weeks. Each earlier week that is not loaded uses one Toggl request.
+- The List view groups the entries since the start of last week by day, with daily and weekly totals.
 - A read-only Projects screen, grouped by workspace.
 - A manual Refresh button.
 - A separate widget that opens from the main window, with three placeholder task rows.

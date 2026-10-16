@@ -2,6 +2,7 @@ mod client;
 pub mod credentials;
 pub(crate) mod quota;
 pub mod summary;
+pub mod week;
 
 use std::fmt;
 
@@ -93,6 +94,8 @@ pub struct Snapshot {
     pub workspaces: Vec<Workspace>,
     pub projects: Vec<Project>,
     pub entries: Vec<TimeEntry>,
+    /// The snapshot holds every entry that started at or after this time.
+    pub loaded_from: Timestamp,
     pub fetched_at: Timestamp,
 }
 
@@ -103,6 +106,19 @@ impl Snapshot {
 
     pub fn running(&self) -> Option<&TimeEntry> {
         self.entries.iter().find(|entry| entry.is_running())
+    }
+
+    /// Adds entries from `from` up to the current `loaded_from` boundary.
+    pub fn extend_back(&mut self, from: Timestamp, entries: Vec<TimeEntry>) {
+        let boundary = self.loaded_from;
+        self.entries.extend(
+            entries
+                .into_iter()
+                .filter(|entry| entry.start >= from && entry.start < boundary),
+        );
+        self.entries
+            .sort_by_key(|entry| std::cmp::Reverse(entry.start));
+        self.loaded_from = self.loaded_from.min(from);
     }
 }
 
@@ -137,6 +153,37 @@ mod tests {
         assert!(entries[1].is_running());
         let now: Timestamp = "2026-10-12T10:00:42Z".parse().unwrap();
         assert_eq!(entries[1].elapsed(now).as_secs(), 42);
+    }
+
+    #[test]
+    fn older_entries_extend_the_loaded_range_without_duplicates() {
+        let entry = |start: &str| TimeEntry {
+            project_id: None,
+            description: None,
+            start: start.parse().unwrap(),
+            stop: None,
+            duration: 60,
+        };
+        let boundary: Timestamp = "2026-10-05T00:00:00Z".parse().unwrap();
+        let mut snapshot = Snapshot {
+            user: User {
+                fullname: None,
+                beginning_of_week: 1,
+            },
+            workspaces: Vec::new(),
+            projects: Vec::new(),
+            entries: vec![entry("2026-10-05T00:00:00Z")],
+            loaded_from: boundary,
+            fetched_at: boundary,
+        };
+        let from: Timestamp = "2026-09-28T00:00:00Z".parse().unwrap();
+        snapshot.extend_back(
+            from,
+            vec![entry("2026-09-29T08:00:00Z"), entry("2026-10-05T00:00:00Z")],
+        );
+        assert_eq!(snapshot.entries.len(), 2);
+        assert_eq!(snapshot.loaded_from, from);
+        assert!(snapshot.entries[0].start > snapshot.entries[1].start);
     }
 
     #[test]

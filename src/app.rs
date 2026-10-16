@@ -2,11 +2,12 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 use jiff::Timestamp;
+use jiff::civil::Date;
 use jiff::tz::TimeZone;
 
 use crate::model::{Action, Connection, State};
 use crate::sync::{Command, Event, Sync};
-use crate::toggl::ApiToken;
+use crate::toggl::{ApiToken, summary};
 use crate::ui;
 
 pub struct App {
@@ -49,7 +50,15 @@ impl App {
                     self.sync.send(Command::Refresh);
                 }
             }
+            Action::ShowTimerView(view) => self.state.timer_view = view,
+            Action::ShowWeek(week) => {
+                self.state.calendar.week = week.filter(|week| Some(*week) < self.current_week());
+                self.load_shown_week();
+            }
+            Action::LoadWeek => self.load_shown_week(),
+            Action::Zoom(step) => self.state.calendar.zoom(step),
             Action::SignOut => {
+                self.state.calendar.week = None;
                 self.token_draft.clear();
                 ui::clear_token_input(ctx);
                 self.state.toggl.connection = Connection::SignedOut;
@@ -79,6 +88,15 @@ impl App {
                 toggl.snapshot = Some(snapshot);
                 toggl.problem = problem;
             }
+            Event::EarlierLoaded { from, to, entries } => {
+                toggl.busy = false;
+                if let Some(snapshot) = &mut toggl.snapshot
+                    && snapshot.loaded_from == to
+                {
+                    snapshot.extend_back(from, entries);
+                }
+                self.load_shown_week();
+            }
             Event::Failed { problem, signed_in } => {
                 toggl.connection = if signed_in {
                     Connection::SignedIn
@@ -89,6 +107,31 @@ impl App {
                 toggl.problem = Some(problem);
             }
         }
+    }
+
+    fn current_week(&self) -> Option<Date> {
+        let snapshot = self.state.toggl.snapshot.as_ref()?;
+        let today = Timestamp::now().to_zoned(TimeZone::system()).date();
+        Some(summary::week_start(today, snapshot.user.beginning_of_week))
+    }
+
+    /// Asks for the entries that the shown week needs and the snapshot lacks.
+    fn load_shown_week(&mut self) {
+        let toggl = &mut self.state.toggl;
+        let (Some(week), Some(snapshot)) = (self.state.calendar.week, &toggl.snapshot) else {
+            return;
+        };
+        let Some(from) = summary::start_of_day(week, &TimeZone::system()) else {
+            return;
+        };
+        if toggl.busy || from >= snapshot.loaded_from {
+            return;
+        }
+        toggl.busy = true;
+        self.sync.send(Command::LoadEarlier {
+            from,
+            to: snapshot.loaded_from,
+        });
     }
 
     fn schedule_repaint(&self, ctx: &egui::Context) {

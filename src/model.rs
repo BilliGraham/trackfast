@@ -1,12 +1,52 @@
 use std::time::{Duration, Instant};
 
+use jiff::civil::Date;
+
 use crate::toggl::Snapshot;
+
+pub const HOUR_HEIGHTS: [f32; 4] = [36.0, 48.0, 60.0, 84.0];
+const DEFAULT_ZOOM: usize = 2;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum Screen {
     #[default]
     Timer,
     Projects,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum TimerView {
+    #[default]
+    Calendar,
+    List,
+}
+
+pub struct Calendar {
+    /// `None` shows the current week.
+    pub week: Option<Date>,
+    pub zoom: usize,
+}
+
+impl Default for Calendar {
+    fn default() -> Self {
+        Self {
+            week: None,
+            zoom: DEFAULT_ZOOM,
+        }
+    }
+}
+
+impl Calendar {
+    pub fn hour_height(&self) -> f32 {
+        HOUR_HEIGHTS[self.zoom.min(HOUR_HEIGHTS.len() - 1)]
+    }
+
+    pub fn zoom(&mut self, step: isize) {
+        self.zoom = self
+            .zoom
+            .saturating_add_signed(step)
+            .min(HOUR_HEIGHTS.len() - 1);
+    }
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -47,6 +87,8 @@ impl Toggl {
 pub struct State {
     pub screen: Screen,
     pub widget_open: bool,
+    pub timer_view: TimerView,
+    pub calendar: Calendar,
     pub toggl: Toggl,
 }
 
@@ -57,11 +99,25 @@ pub enum Action {
     SignIn,
     Refresh,
     SignOut,
+    ShowTimerView(TimerView),
+    /// `None` returns to the current week.
+    ShowWeek(Option<Date>),
+    LoadWeek,
+    Zoom(isize),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn calendar_zoom_stays_within_the_steps() {
+        let mut calendar = Calendar::default();
+        calendar.zoom(-5);
+        assert_eq!(calendar.hour_height(), HOUR_HEIGHTS[0]);
+        calendar.zoom(9);
+        assert_eq!(calendar.hour_height(), HOUR_HEIGHTS[3]);
+    }
 
     #[test]
     fn refresh_waits_until_the_worker_deadline() {

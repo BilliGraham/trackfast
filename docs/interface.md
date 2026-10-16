@@ -4,7 +4,11 @@ Trackfast uses dark neutral surfaces, small headings, and muted pink selection a
 Project colours identify projects. They do not decorate unrelated controls.
 
 The navigation uses full-width rows. The main view separates timer controls, totals, and sync status.
-Time entries show the description and duration above the project and time range.
+The Timer screen has a Calendar view and a List view. The Calendar view is the default.
+The Calendar view shows hour labels in 12-hour format and entries as blocks in their project colour.
+Overlapping entries share the day width. Entries that cross midnight show on both days.
+A red line marks the current time. The − and + buttons change the hour height.
+In the List view, time entries show the description and duration above the project and time range.
 Long descriptions and project names shorten to fit the available width. Hover to read the full text.
 
 The widget uses the same colours and three compact task rows.

@@ -123,8 +123,23 @@ impl Client {
             workspaces: me.workspaces.unwrap_or_default(),
             projects: me.projects.unwrap_or_default(),
             entries,
+            loaded_from: range_start,
             fetched_at: now,
         })
+    }
+
+    /// Loads the entries that started from `start` up to `end`. This uses one API request.
+    pub fn fetch_entries(
+        &self,
+        start: Timestamp,
+        end: Timestamp,
+        quota: &mut RequestQuota,
+    ) -> Result<Vec<TimeEntry>, ApiError> {
+        self.get(
+            "/me/time_entries",
+            &[("start_date", &rfc3339(start)), ("end_date", &rfc3339(end))],
+            quota,
+        )
     }
 
     fn get<T: DeserializeOwned>(

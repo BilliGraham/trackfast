@@ -9,6 +9,7 @@ struct FakeBackend {
     fetches: usize,
     delete_error: bool,
     responses: VecDeque<Result<Snapshot, ApiError>>,
+    entry_responses: VecDeque<Result<Vec<TimeEntry>, ApiError>>,
 }
 
 impl Backend for FakeBackend {
@@ -35,6 +36,19 @@ impl Backend for FakeBackend {
         self.fetches += 1;
         self.responses.pop_front().expect("Supply a test response.")
     }
+
+    fn fetch_entries(
+        &mut self,
+        _: &Client,
+        _: Timestamp,
+        _: Timestamp,
+        _: &mut RequestQuota,
+    ) -> Result<Vec<TimeEntry>, ApiError> {
+        self.fetches += 1;
+        self.entry_responses
+            .pop_front()
+            .expect("Supply a test entry response.")
+    }
 }
 
 fn worker(response: Result<Snapshot, ApiError>) -> (Worker<FakeBackend>, Receiver<Event>) {
@@ -48,6 +62,7 @@ fn worker(response: Result<Snapshot, ApiError>) -> (Worker<FakeBackend>, Receive
                 fetches: 0,
                 delete_error: false,
                 responses: VecDeque::from([response]),
+                entry_responses: VecDeque::new(),
             },
             client: None,
             quota: RequestQuota::default(),
@@ -65,6 +80,7 @@ fn snapshot() -> Snapshot {
         workspaces: Vec::new(),
         projects: Vec::new(),
         entries: Vec::new(),
+        loaded_from: "2026-10-05T00:00:00Z".parse().unwrap(),
         fetched_at: "2026-10-16T13:00:00Z".parse().unwrap(),
     }
 }
@@ -195,4 +211,29 @@ fn an_accepted_sign_in_saves_the_token_and_loads_the_snapshot() {
             .try_iter()
             .any(|event| matches!(event, Event::Loaded { problem: None, .. }))
     );
+}
+
+#[test]
+fn earlier_entries_load_with_one_request() {
+    let (mut worker, events) = worker(Ok(snapshot()));
+    worker.restore();
+    let from: Timestamp = "2026-09-28T00:00:00Z".parse().unwrap();
+    let to: Timestamp = "2026-10-05T00:00:00Z".parse().unwrap();
+    worker.backend.entry_responses.push_back(Ok(Vec::new()));
+    worker.handle(Command::LoadEarlier { from, to });
+    assert_eq!(worker.backend.fetches, 2);
+    assert!(worker.client.is_some());
+    assert!(events.try_iter().any(|event| matches!(
+        event,
+        Event::EarlierLoaded { from: loaded, .. } if loaded == from
+    )));
+}
+
+#[test]
+fn earlier_entries_need_a_signed_in_client() {
+    let (mut worker, events) = worker(Ok(snapshot()));
+    let from: Timestamp = "2026-09-28T00:00:00Z".parse().unwrap();
+    worker.handle(Command::LoadEarlier { from, to: from });
+    assert_eq!(worker.backend.fetches, 0);
+    assert_eq!(events.try_iter().count(), 0);
 }
