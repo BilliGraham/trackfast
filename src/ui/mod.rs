@@ -6,13 +6,13 @@ const ACCENT: Color32 = Color32::from_rgb(208, 128, 200);
 
 pub fn shell(ui: &mut egui::Ui, state: &State) -> Vec<Action> {
     let mut actions = Vec::new();
-    egui::SidePanel::left("navigation")
-        .exact_width(175.0)
+    egui::Panel::left("navigation")
+        .exact_size(175.0)
         .resizable(false)
         .frame(
             egui::Frame::new()
                 .fill(Color32::from_rgb(15, 15, 15))
-                .inner_margin(18.0),
+                .inner_margin(18),
         )
         .show(ui, |ui| {
             ui.heading(RichText::new("Trackfast").color(ACCENT));
