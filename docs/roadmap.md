@@ -17,7 +17,8 @@ Keep production integration credentials on the server. Keep local work when the 
 | 4 | Xero exports, entry states, restricted PM weekly totals, and donut charts. |
 | 5 | A small pilot with checked totals, actionable failures, and gradual user expansion. |
 
-Phase 1 is a draft contract, not a server deployment.
+Phase 1 supplied the draft contract. Phase 2A now has a local development API for exact duration-only entries.
+See server.md for supported operations, authentication limits, and Postgres checks.
 Review the open decisions in api-contract.md before implementing dependent behaviour.
 Start phase 2A with duration-only entry creation, retrieval, replacement, and deletion.
 Do not connect the native app to HTTP during phase 1 or phase 2.

@@ -3,6 +3,36 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  api-server:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: trackfast_test
+          POSTGRES_PASSWORD: trackfast_test_only
+          POSTGRES_DB: trackfast_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U trackfast_test -d trackfast_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TRACKFAST_TEST_DATABASE_URL: host=127.0.0.1 port=5432 user=trackfast_test password=trackfast_test_only dbname=trackfast_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+      - name: Check server formatting
+        run: cargo fmt --manifest-path server/Cargo.toml --all --check
+      - name: Check server lints
+        run: cargo clippy --manifest-path server/Cargo.toml --locked --all-targets -- -D warnings
+      - name: Run Postgres integration tests
+        run: cargo test --manifest-path server/Cargo.toml --locked --all-targets
+      - name: Build server
+        run: cargo build --manifest-path server/Cargo.toml --locked
   api-contract:
     strategy:
       fail-fast: false

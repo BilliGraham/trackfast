@@ -1,0 +1,302 @@
+use crate::{Actor, ApiError, AppState, Reply, bad_request, internal, invalid, missing};
+use axum::{
+    body::Bytes,
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode},
+};
+use chrono::{NaiveDate, Utc};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use uuid::Uuid;
+
+fn parse_id(raw: &str) -> Result<Uuid, ApiError> {
+    Uuid::parse_str(raw).map_err(|_| invalid())
+}
+
+fn parse_date(raw: &str) -> Result<NaiveDate, ApiError> {
+    let date = NaiveDate::parse_from_str(raw, "%Y-%m-%d").map_err(|_| invalid())?;
+    if date.format("%Y-%m-%d").to_string() != raw {
+        return Err(invalid());
+    }
+    Ok(date)
+}
+
+fn entry_body(body: &[u8], create: bool) -> Result<(Option<Uuid>, Value), ApiError> {
+    let value: Value = serde_json::from_slice(body).map_err(|_| bad_request())?;
+    let mut fields = value.as_object().cloned().ok_or_else(invalid)?;
+    let entry_id = if create {
+        Some(parse_id(
+            fields
+                .remove("entry_id")
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .ok_or_else(invalid)?
+                .as_str(),
+        )?)
+    } else {
+        None
+    };
+    let expected = [
+        "kind",
+        "entry_date",
+        "project_id",
+        "description",
+        "original_seconds",
+    ];
+    if fields.len() != expected.len() || expected.iter().any(|k| !fields.contains_key(*k)) {
+        return Err(invalid());
+    }
+    if fields["kind"] != "duration" || !fields["project_id"].is_null() {
+        return Err(invalid());
+    }
+    let date = fields["entry_date"].as_str().ok_or_else(invalid)?;
+    parse_date(date)?;
+    let seconds = fields["original_seconds"].as_i64().ok_or_else(invalid)?;
+    if !(1..=9_007_199_254_740_991).contains(&seconds) {
+        return Err(invalid());
+    }
+    if fields["description"]
+        .as_str()
+        .ok_or_else(invalid)?
+        .chars()
+        .count()
+        > 2000
+    {
+        return Err(invalid());
+    }
+    Ok((entry_id, Value::Object(fields)))
+}
+
+fn operation_key(headers: &HeaderMap) -> Result<Uuid, ApiError> {
+    headers
+        .get("idempotency-key")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or_else(bad_request)
+}
+
+fn precondition(headers: &HeaderMap) -> Result<i64, ApiError> {
+    let raw = headers
+        .get("if-match")
+        .ok_or(ApiError(
+            StatusCode::PRECONDITION_REQUIRED,
+            "precondition_required",
+            "Supply the last ETag in If-Match.",
+        ))?
+        .to_str()
+        .map_err(|_| bad_request())?;
+    let number = raw
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .ok_or_else(bad_request)?;
+    let version: i64 = number.parse().map_err(|_| bad_request())?;
+    if version <= 0 || number != version.to_string() {
+        return Err(bad_request());
+    }
+    Ok(version)
+}
+
+pub(crate) async fn create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> Result<Reply, ApiError> {
+    let actor = state.actor(&headers)?;
+    let (id, body) = entry_body(&bytes, true)?;
+    mutate(
+        &state,
+        actor,
+        &headers,
+        id.unwrap(),
+        "create",
+        Some(body),
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn replace(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> Result<Reply, ApiError> {
+    let actor = state.actor(&headers)?;
+    let (_, body) = entry_body(&bytes, false)?;
+    mutate(
+        &state,
+        actor,
+        &headers,
+        parse_id(&id)?,
+        "replace",
+        Some(body),
+        Some(precondition(&headers)?),
+    )
+    .await
+}
+
+pub(crate) async fn delete(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Reply, ApiError> {
+    let actor = state.actor(&headers)?;
+    mutate(
+        &state,
+        actor,
+        &headers,
+        parse_id(&id)?,
+        "delete",
+        None,
+        Some(precondition(&headers)?),
+    )
+    .await
+}
+
+async fn mutate(
+    state: &AppState,
+    actor: Actor,
+    headers: &HeaderMap,
+    id: Uuid,
+    action: &str,
+    body: Option<Value>,
+    expected: Option<i64>,
+) -> Result<Reply, ApiError> {
+    let key = operation_key(headers)?;
+    let request = json!({"action":action,"entry_id":id,"body":body,"version":expected});
+    let mut client = state.connect().await?;
+    let tx = client.transaction().await.map_err(internal)?;
+    tx.execute("INSERT INTO api_operations(tenant_id,person_id,operation_id,request) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING", &[&actor.tenant,&actor.person,&key,&request]).await.map_err(internal)?;
+    let operation = tx.query_one("SELECT request,response FROM api_operations WHERE tenant_id=$1 AND person_id=$2 AND operation_id=$3 FOR UPDATE", &[&actor.tenant,&actor.person,&key]).await.map_err(internal)?;
+    if operation.get::<_, Value>(0) != request {
+        return Err(ApiError(
+            StatusCode::CONFLICT,
+            "idempotency_conflict",
+            "Use the same operation key only for the same request.",
+        ));
+    }
+    if let Some(value) = operation.get::<_, Option<Value>>(1) {
+        return serde_json::from_value(value).map_err(internal);
+    }
+    let saved = tx.query_opt("SELECT version,deleted,data FROM api_entries WHERE tenant_id=$1 AND person_id=$2 AND entry_id=$3 FOR UPDATE", &[&actor.tenant,&actor.person,&id]).await.map_err(internal)?;
+    let version = if action == "create" {
+        if saved.is_some() {
+            return Err(ApiError(
+                StatusCode::CONFLICT,
+                "idempotency_conflict",
+                "This entry ID was already used.",
+            ));
+        }
+        1
+    } else {
+        let row = saved.as_ref().ok_or_else(missing)?;
+        if row.get::<_, bool>(1) {
+            return Err(missing());
+        }
+        let version: i64 = row.get(0);
+        if expected != Some(version) {
+            return Err(ApiError(
+                StatusCode::PRECONDITION_FAILED,
+                "version_conflict",
+                "The entry changed. Retrieve its current version.",
+            ));
+        }
+        version.checked_add(1).ok_or_else(|| internal(()))?
+    };
+    let mut data = body.unwrap_or_else(|| saved.as_ref().unwrap().get(2));
+    data["entry_id"] = json!(id);
+    data["person_id"] = json!(actor.person);
+    data["version"] = json!(version);
+    data["effective_seconds"] = data["original_seconds"].clone();
+    data["rounding_interval_minutes"] = Value::Null;
+    data["export_state"] = json!("not_exported");
+    data["updated_at"] = json!(Utc::now().to_rfc3339());
+    if action == "create" {
+        let inserted = tx.execute("INSERT INTO api_entries(tenant_id,person_id,entry_id,version,data) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING", &[&actor.tenant,&actor.person,&id,&version,&data]).await.map_err(internal)?;
+        if inserted == 0 {
+            return Err(ApiError(
+                StatusCode::CONFLICT,
+                "idempotency_conflict",
+                "This entry ID was already used.",
+            ));
+        }
+    } else {
+        tx.execute("UPDATE api_entries SET version=$4,deleted=$5,data=$6 WHERE tenant_id=$1 AND person_id=$2 AND entry_id=$3", &[&actor.tenant,&actor.person,&id,&version,&(action=="delete"),&data]).await.map_err(internal)?;
+    }
+    tx.execute("INSERT INTO api_audit(tenant_id,person_id,entry_id,operation_id,action,data) VALUES ($1,$2,$3,$4,$5,$6)", &[&actor.tenant,&actor.person,&id,&key,&action,&data]).await.map_err(internal)?;
+    let reply = Reply {
+        status: match action {
+            "create" => 201,
+            "delete" => 204,
+            _ => 200,
+        },
+        body: if action == "delete" { None } else { Some(data) },
+        etag: if action == "delete" {
+            None
+        } else {
+            Some(format!("\"{version}\""))
+        },
+        location: if action == "create" {
+            Some(format!("/v1/me/entries/{id}"))
+        } else {
+            None
+        },
+    };
+    tx.execute("UPDATE api_operations SET response=$4 WHERE tenant_id=$1 AND person_id=$2 AND operation_id=$3", &[&actor.tenant,&actor.person,&key,&serde_json::to_value(&reply).map_err(internal)?]).await.map_err(internal)?;
+    tx.commit().await.map_err(internal)?;
+    Ok(reply)
+}
+
+pub(crate) async fn read(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Reply, ApiError> {
+    let actor = state.actor(&headers)?;
+    let id = parse_id(&id)?;
+    let client = state.connect().await?;
+    let row = client.query_opt("SELECT data,version FROM api_entries WHERE tenant_id=$1 AND person_id=$2 AND entry_id=$3 AND NOT deleted", &[&actor.tenant,&actor.person,&id]).await.map_err(internal)?.ok_or_else(missing)?;
+    Ok(Reply {
+        status: 200,
+        body: Some(row.get(0)),
+        etag: Some(format!("\"{}\"", row.get::<_, i64>(1))),
+        location: None,
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ListQuery {
+    from_date: String,
+    to_date: String,
+}
+
+pub(crate) async fn list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    query: Result<Query<ListQuery>, axum::extract::rejection::QueryRejection>,
+) -> Result<Reply, ApiError> {
+    let actor = state.actor(&headers)?;
+    let Query(query) = query.map_err(|_| invalid())?;
+    let from = parse_date(&query.from_date)?;
+    let to = parse_date(&query.to_date)?;
+    if from > to {
+        return Err(invalid());
+    }
+    let client = state.connect().await?;
+    let rows = client.query("SELECT data FROM api_entries WHERE tenant_id=$1 AND person_id=$2 AND NOT deleted AND data->>'entry_date' >= $3 AND data->>'entry_date' <= $4 ORDER BY entry_id LIMIT 101", &[&actor.tenant,&actor.person,&query.from_date,&query.to_date]).await.map_err(internal)?;
+    if rows.len() > 100 {
+        return Err(ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "validation_failed",
+            "Use a smaller date range. Pagination is not implemented in this development slice.",
+        ));
+    }
+    Ok(Reply {
+        status: 200,
+        body: Some(
+            json!({"items":rows.iter().map(|r|r.get::<_,Value>(0)).collect::<Vec<_>>(),"next_cursor":null}),
+        ),
+        etag: None,
+        location: None,
+    })
+}

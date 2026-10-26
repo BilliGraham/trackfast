@@ -6,7 +6,9 @@ All data stays in a local SQLite file. Trackfast has no account, sync, or hosted
 The target product has a shared API and a polished native reference client.
 Phase 1 defines [the API contract](docs/api-contract.md) and [delivery roadmap](docs/roadmap.md).
 The app remains local while the API develops. Internal teams can later build other clients against the same API.
-The GitHub repository is BilliGraham/trackfast. Keep it private.
+The GitHub repository is BilliGraham/trackfast. The user selected public visibility.
+The separate [development API](docs/server.md) now stores duration-only entries in Postgres.
+It uses local development credentials. The desktop app is not connected to it.
 
 ## Current scope
 

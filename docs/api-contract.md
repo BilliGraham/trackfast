@@ -1,6 +1,7 @@
 # API contract: phase 1
 
-Status: draft for review. No server or HTTP adapter exists yet.
+Status: target contract. A limited development implementation now exists in `server/`.
+See [server scope](server.md) for supported operations and restrictions. The desktop HTTP adapter does not exist yet.
 
 The machine-readable contract is [OpenAPI](../api/openapi.json).
 Client examples are in [examples.json](../api/examples.json).
@@ -78,7 +79,7 @@ Implement dependent calculations only after these decisions. Schema examples do 
 | `GET /v1/me/settings` | Retrieve personal settings and their ETag. |
 | `PUT /v1/me/settings` | Replace personal settings with an If-Match precondition. |
 
-These endpoints form a proposed version 1 contract. They are not deployed endpoints.
+These endpoints form a proposed version 1 contract. The limited local implementation is not a deployed service.
 Use bearer access tokens. Define Google sign-in and token lifecycle before server implementation.
 Validate token signature, issuer, audience, and expiry. Derive tenant and person from the verified identity.
 Do not trust a caller-supplied person ID, company domain, or role.
@@ -130,7 +131,7 @@ Audit-reader permissions and operational event fields remain proposals for revie
 Contract tests validate the OpenAPI document, resolve references, and exercise request and response examples.
 Negative tests reject ownership injection, authoritative client totals, invalid dates, and mixed entry modes.
 These tests do not prove authentication, persistence, arithmetic, or conflict behaviour in a running service.
-Add each behavioural test before its implementation in phase 2A.
+Add each behavioural test before its implementation in phase 2A. The first Postgres workflow now has integration tests.
 
 The first API workflow must prove:
 

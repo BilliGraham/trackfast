@@ -7,7 +7,7 @@ Use ASD-STE100 sentence structure for prose. Keep necessary technical terms.
 
 The current Trackfast app is a local time tracker. It is not a Toggl client.
 The target product has an API and a polished native reference client. See `docs/roadmap.md` and `docs/api-contract.md`.
-Phase 1 covers the shared contract and tests. It does not add a server or connect the app to HTTP.
+Phase 2A starts the standalone development API in `server/`. The desktop app remains on local storage.
 Add features in small steps that the user requests.
 Current app data stays in local SQLite. Add the planned API, accounts, and sync only in their requested implementation phases.
 Do not add Toggl writes without a new task.
@@ -28,6 +28,8 @@ Do not report Linux or macOS as tested until those checks run.
 - `src/model.rs` holds shared interface state and action types.
 - `src/entries/` holds the session types and the day and week logic that the views use.
 - `src/db/` owns the SQLite schema. Only the database worker thread opens the file.
+- `server/` owns the development HTTP service and separate Postgres schema. It does not open the desktop SQLite file.
+- Keep development credentials behind an explicit local-only mode. Production identity remains a separate task.
 - Make each user action one transaction. Never leave a session or widget row half changed.
 - Change the schema only by adding a step to `MIGRATIONS`. Never edit a released step.
 - `src/import.rs` and `src/toggl/` run the optional Toggl import on a background thread.
@@ -60,5 +62,5 @@ Update `README.md` and the relevant files in `docs/` with user-visible changes.
 
 Keep `main` linear. Use focused commits. Do not create merge commits.
 Do not rewrite published history without explicit user permission.
-Keep the GitHub repository private under BilliGraham.
+Keep the GitHub repository under BilliGraham. The user chose public visibility on October 26, 2026.
 Do not publish releases or add release workflows without a user request.

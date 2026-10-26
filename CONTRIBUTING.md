@@ -4,7 +4,7 @@
 
 Build one small step at a time.
 The current app provides local tracking with a widget, projects, and an optional Toggl import.
-The active phase defines the API contract and tests. See `docs/api-contract.md` and `docs/roadmap.md`.
+The active phase starts the standalone API. See `docs/api-contract.md`, `docs/server.md`, and `docs/roadmap.md`.
 Develop the API and polished native app independently. Connect the app after both work.
 The native app includes these parts:
 
@@ -58,6 +58,9 @@ If it already passes, record that result. Do not introduce a defect to force a f
 Run the full timer suite after each change.
 Add focused regression tests for database, timer, and date behaviour.
 Use an in-memory database in tests. Do not call the real Toggl API from tests.
+For server tests, use a disposable Postgres database through `TRACKFAST_TEST_DATABASE_URL`.
+Each server test uses a separate generated schema. Never point these tests at a production database.
+Run server formatting, Clippy, tests, and build with `--manifest-path server/Cargo.toml` and `--locked` where applicable.
 Examine interface changes at narrow and normal window sizes.
 Examine both themes when the app supports both themes.
 Keep review captures and recordings outside the repository.
