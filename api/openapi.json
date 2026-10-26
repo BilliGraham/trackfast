@@ -1,0 +1,1283 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Trackfast API",
+    "version": "0.1.0-draft",
+    "description": "Phase 1 contract. No service is deployed. Rounding edge cases and timed date assignment remain open. See docs/api-contract.md."
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "paths": {
+    "/v1/projects": {
+      "get": {
+        "operationId": "listProjects",
+        "summary": "List projects available to the caller.",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectList"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ]
+      }
+    },
+    "/v1/me/entries": {
+      "get": {
+        "operationId": "listEntries",
+        "summary": "List the caller's entries.",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryList"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createEntry",
+        "summary": "Create an entry owned by the caller.",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryResponse"
+                },
+                "example": {
+                  "entry_id": "00000000-0000-4000-8000-000000000001",
+                  "kind": "timed",
+                  "entry_date": "2026-10-26",
+                  "project_id": "00000000-0000-4000-8000-000000000002",
+                  "description": "Development",
+                  "started_at": "2026-10-26T09:03:00+02:00",
+                  "stopped_at": "2026-10-26T09:16:00+02:00",
+                  "person_id": "00000000-0000-4000-8000-000000000003",
+                  "version": 1,
+                  "original_seconds": 780,
+                  "effective_seconds": 900,
+                  "rounding_interval_minutes": 5,
+                  "export_state": "not_exported",
+                  "updated_at": "2026-10-26T07:16:01Z"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^\"[1-9][0-9]*\"$"
+                },
+                "description": "Quoted current version."
+              },
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "The created entry resource path."
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntryCreate"
+              },
+              "examples": {
+                "duration": {
+                  "value": {
+                    "entry_id": "00000000-0000-4000-8000-000000000001",
+                    "kind": "duration",
+                    "entry_date": "2026-10-26",
+                    "project_id": "00000000-0000-4000-8000-000000000002",
+                    "description": "Development",
+                    "original_seconds": 10800
+                  }
+                },
+                "timed": {
+                  "value": {
+                    "entry_id": "00000000-0000-4000-8000-000000000001",
+                    "kind": "timed",
+                    "entry_date": "2026-10-26",
+                    "project_id": "00000000-0000-4000-8000-000000000002",
+                    "description": "Development",
+                    "started_at": "2026-10-26T09:03:00+02:00",
+                    "stopped_at": "2026-10-26T09:16:00+02:00"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/entries/{entry_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/EntryId"
+        }
+      ],
+      "get": {
+        "operationId": "getEntry",
+        "summary": "Read one owned entry.",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryResponse"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^\"[1-9][0-9]*\"$"
+                },
+                "description": "Quoted current version."
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "replaceEntry",
+        "summary": "Replace an editable owned entry.",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "412": {
+            "$ref": "#/components/responses/Error412"
+          },
+          "428": {
+            "$ref": "#/components/responses/Error428"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryResponse"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^\"[1-9][0-9]*\"$"
+                },
+                "description": "Quoted current version."
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntryWrite"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteEntry",
+        "summary": "Delete an editable owned entry.",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "412": {
+            "$ref": "#/components/responses/Error412"
+          },
+          "428": {
+            "$ref": "#/components/responses/Error428"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "204": {
+            "description": "Deleted. An identical operation retry returns 204."
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ]
+      }
+    },
+    "/v1/me/settings": {
+      "get": {
+        "operationId": "getSettings",
+        "summary": "Read personal settings.",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^\"[1-9][0-9]*\"$"
+                },
+                "description": "Quoted current version."
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "replaceSettings",
+        "summary": "Replace personal settings.",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "412": {
+            "$ref": "#/components/responses/Error412"
+          },
+          "428": {
+            "$ref": "#/components/responses/Error428"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^\"[1-9][0-9]*\"$"
+                },
+                "description": "Quoted current version."
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsWrite"
+              },
+              "example": {
+                "rounding_interval_minutes": 5,
+                "weekly_target_hours": 35,
+                "visual_indicator": "progress"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Trackfast access token. The server verifies identity, company membership, and scope."
+      }
+    },
+    "schemas": {
+      "DurationCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entry_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "kind": {
+            "const": "duration",
+            "type": "string"
+          },
+          "original_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "entry_id",
+          "entry_date",
+          "project_id",
+          "description",
+          "kind",
+          "original_seconds"
+        ]
+      },
+      "TimedCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entry_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "kind": {
+            "const": "timed",
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stopped_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "entry_id",
+          "entry_date",
+          "project_id",
+          "description",
+          "kind",
+          "started_at",
+          "stopped_at"
+        ],
+        "description": "The server checks stop > start and derives original seconds. Date assignment remains open."
+      },
+      "EntryCreate": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DurationCreate"
+          },
+          {
+            "$ref": "#/components/schemas/TimedCreate"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "duration": "#/components/schemas/DurationCreate",
+            "timed": "#/components/schemas/TimedCreate"
+          }
+        }
+      },
+      "DurationWrite": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entry_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "kind": {
+            "const": "duration",
+            "type": "string"
+          },
+          "original_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "entry_date",
+          "project_id",
+          "description",
+          "kind",
+          "original_seconds"
+        ]
+      },
+      "TimedWrite": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entry_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "kind": {
+            "const": "timed",
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stopped_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "entry_date",
+          "project_id",
+          "description",
+          "kind",
+          "started_at",
+          "stopped_at"
+        ],
+        "description": "The server checks stop > start and derives original seconds. Date assignment remains open."
+      },
+      "EntryWrite": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DurationWrite"
+          },
+          {
+            "$ref": "#/components/schemas/TimedWrite"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "duration": "#/components/schemas/DurationWrite",
+            "timed": "#/components/schemas/TimedWrite"
+          }
+        }
+      },
+      "DurationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entry_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "kind": {
+            "const": "duration",
+            "type": "string"
+          },
+          "original_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "entry_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "person_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "effective_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "rounding_interval_minutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "enum": [
+              null,
+              5
+            ],
+            "default": 5,
+            "description": "Null disables rounding. More intervals remain an open decision."
+          },
+          "export_state": {
+            "$ref": "#/components/schemas/ExportState"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "entry_date",
+          "project_id",
+          "description",
+          "kind",
+          "original_seconds",
+          "entry_id",
+          "person_id",
+          "version",
+          "effective_seconds",
+          "rounding_interval_minutes",
+          "export_state",
+          "updated_at"
+        ]
+      },
+      "TimedResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entry_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "kind": {
+            "const": "timed",
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stopped_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "entry_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "person_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "original_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "effective_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "rounding_interval_minutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "enum": [
+              null,
+              5
+            ],
+            "default": 5,
+            "description": "Null disables rounding. More intervals remain an open decision."
+          },
+          "export_state": {
+            "$ref": "#/components/schemas/ExportState"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "entry_date",
+          "project_id",
+          "description",
+          "kind",
+          "started_at",
+          "stopped_at",
+          "entry_id",
+          "person_id",
+          "version",
+          "original_seconds",
+          "effective_seconds",
+          "rounding_interval_minutes",
+          "export_state",
+          "updated_at"
+        ],
+        "description": "The server checks stop > start and derives original seconds. Date assignment remains open."
+      },
+      "EntryResponse": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DurationResponse"
+          },
+          {
+            "$ref": "#/components/schemas/TimedResponse"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "duration": "#/components/schemas/DurationResponse",
+            "timed": "#/components/schemas/TimedResponse"
+          }
+        }
+      },
+      "ExportState": {
+        "type": "string",
+        "enum": [
+          "not_exported",
+          "exported",
+          "update_pending",
+          "needs_attention"
+        ],
+        "description": "Server export state only. Local pending sync is client state. Zero-duration export policy remains open."
+      },
+      "SettingsWrite": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "rounding_interval_minutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "enum": [
+              null,
+              5
+            ],
+            "default": 5,
+            "description": "Null disables rounding. More intervals remain an open decision."
+          },
+          "weekly_target_hours": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "default": 35
+          },
+          "visual_indicator": {
+            "type": "string",
+            "enum": [
+              "glass",
+              "progress"
+            ]
+          }
+        },
+        "required": [
+          "rounding_interval_minutes",
+          "weekly_target_hours",
+          "visual_indicator"
+        ]
+      },
+      "Settings": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "rounding_interval_minutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "enum": [
+              null,
+              5
+            ],
+            "default": 5,
+            "description": "Null disables rounding. More intervals remain an open decision."
+          },
+          "weekly_target_hours": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "default": 35
+          },
+          "visual_indicator": {
+            "type": "string",
+            "enum": [
+              "glass",
+              "progress"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "rounding_interval_minutes",
+          "weekly_target_hours",
+          "visual_indicator",
+          "version"
+        ]
+      },
+      "Project": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "colour": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "archived": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project_id",
+          "name",
+          "colour",
+          "archived"
+        ]
+      },
+      "EntryList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntryResponse"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ]
+      },
+      "ProjectList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Project"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "bad_request",
+              "unauthenticated",
+              "forbidden",
+              "not_found",
+              "idempotency_conflict",
+              "version_conflict",
+              "entry_locked",
+              "validation_failed",
+              "precondition_required",
+              "rate_limited",
+              "internal_error"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "request_id"
+        ]
+      }
+    },
+    "parameters": {
+      "EntryId": {
+        "name": "entry_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "Persist one key per mutation. Retry the same request with the same key. Different content returns 409."
+      },
+      "IfMatch": {
+        "name": "If-Match",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^\"[1-9][0-9]*\"$"
+        },
+        "description": "Use the last ETag. Missing values return 428. Stale values return 412. Identical operation retries replay first."
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 50
+        }
+      },
+      "From": {
+        "name": "from_date",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "description": "Inclusive start date. Must not exceed to_date."
+      },
+      "To": {
+        "name": "to_date",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "description": "Inclusive end date."
+      }
+    },
+    "responses": {
+      "Error400": {
+        "description": "Malformed request or missing operation key.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error401": {
+        "description": "Authentication is missing or invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error403": {
+        "description": "This operation is forbidden.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error404": {
+        "description": "The resource is unavailable in this scope.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error409": {
+        "description": "The operation key conflicts or the entry is locked.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error412": {
+        "description": "The record version changed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error422": {
+        "description": "Field values or cross-field rules are invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error428": {
+        "description": "If-Match is required.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error429": {
+        "description": "The rate limit was reached.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Seconds before another attempt."
+          }
+        }
+      },
+      "Error500": {
+        "description": "An internal failure occurred.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-status": "draft",
+  "x-open-decisions": [
+    "rounding_ties",
+    "zero_rounded_duration",
+    "existing_entry_recalculation",
+    "subminute_xero_export",
+    "timed_entry_date_assignment",
+    "offline_setting_snapshot",
+    "audit_readers"
+  ]
+}

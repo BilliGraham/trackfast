@@ -5,12 +5,15 @@ Use ASD-STE100 sentence structure for prose. Keep necessary technical terms.
 
 ## Scope
 
-Trackfast is a local time tracker. Its design is inspired by Toggl Track, but it is not a Toggl client.
+The current Trackfast app is a local time tracker. It is not a Toggl client.
+The target product has an API and a polished native reference client. See `docs/roadmap.md` and `docs/api-contract.md`.
+Phase 1 covers the shared contract and tests. It does not add a server or connect the app to HTTP.
 Add features in small steps that the user requests.
-All data stays in the local SQLite file. Do not add sync, accounts, or Toggl writes without a new task.
+Current app data stays in local SQLite. Add the planned API, accounts, and sync only in their requested implementation phases.
+Do not add Toggl writes without a new task.
 The Toggl import is read-only and runs only when the user starts it. Use only the official Toggl Track API.
 Do not use Toggl branding in the interface.
-Keep the app native. Do not add a browser engine, telemetry, or a hosted backend.
+Keep the app native. Do not add a browser engine or telemetry. Hosting and deployment require their own task.
 
 ## Platforms
 
@@ -47,6 +50,7 @@ or the reason for a non-obvious decision. Do not restate the code.
 ## Validation
 
 Run the checks in `CONTRIBUTING.md`.
+Use TDD for executable contract and behaviour changes. Run the new failing check before adding the corresponding implementation.
 Add focused tests when behaviour can regress. Do not test declarations alone.
 Keep review captures and recordings outside the repository.
 Report compiled, tested, and visually checked platforms separately.

@@ -3,6 +3,9 @@
 Trackfast is a native Rust and egui time tracker for one person on one computer.
 Its design is inspired by Toggl Track. It is not a Toggl client and uses no Toggl branding.
 All data stays in a local SQLite file. Trackfast has no account, sync, or hosted backend.
+The target product has a shared API and a polished native reference client.
+Phase 1 defines [the API contract](docs/api-contract.md) and [delivery roadmap](docs/roadmap.md).
+The app remains local while the API develops. Internal teams can later build other clients against the same API.
 The GitHub repository is BilliGraham/trackfast. Keep it private.
 
 ## Current scope
@@ -58,6 +61,10 @@ Running entries in Toggl are skipped. A second import adds only entries that are
 See [the import rules](docs/toggl-import.md).
 
 ## Run
+
+For the separate Xero demo connection check, see [the test tool instructions](docs/xero-demo.md).
+This development tool does not add Xero integration to the desktop app.
+Its optional `--write-test` mode checks labelled demo time entries and removes them after the test.
 
 Install [rustup](https://rustup.rs) and the native build tools for your platform.
 On Linux, also install the libxkbcommon, Wayland, and Mesa OpenGL development packages.

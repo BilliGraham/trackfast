@@ -1,0 +1,146 @@
+[
+  {
+    "name": "duration_create",
+    "schema": "EntryCreate",
+    "value": {
+      "entry_id": "00000000-0000-4000-8000-000000000001",
+      "kind": "duration",
+      "entry_date": "2026-10-26",
+      "project_id": "00000000-0000-4000-8000-000000000002",
+      "description": "Development",
+      "original_seconds": 10800
+    }
+  },
+  {
+    "name": "timed_create",
+    "schema": "EntryCreate",
+    "value": {
+      "entry_id": "00000000-0000-4000-8000-000000000001",
+      "kind": "timed",
+      "entry_date": "2026-10-26",
+      "project_id": "00000000-0000-4000-8000-000000000002",
+      "description": "Development",
+      "started_at": "2026-10-26T09:03:00+02:00",
+      "stopped_at": "2026-10-26T09:16:00+02:00"
+    }
+  },
+  {
+    "name": "duration_replace",
+    "schema": "EntryWrite",
+    "value": {
+      "kind": "duration",
+      "entry_date": "2026-10-26",
+      "project_id": "00000000-0000-4000-8000-000000000002",
+      "description": "Development",
+      "original_seconds": 10800
+    }
+  },
+  {
+    "name": "timed_rounded",
+    "schema": "EntryResponse",
+    "value": {
+      "entry_id": "00000000-0000-4000-8000-000000000001",
+      "kind": "timed",
+      "entry_date": "2026-10-26",
+      "project_id": "00000000-0000-4000-8000-000000000002",
+      "description": "Development",
+      "started_at": "2026-10-26T09:03:00+02:00",
+      "stopped_at": "2026-10-26T09:16:00+02:00",
+      "person_id": "00000000-0000-4000-8000-000000000003",
+      "version": 1,
+      "original_seconds": 780,
+      "effective_seconds": 900,
+      "rounding_interval_minutes": 5,
+      "export_state": "not_exported",
+      "updated_at": "2026-10-26T07:16:01Z"
+    }
+  },
+  {
+    "name": "timed_exact",
+    "schema": "EntryResponse",
+    "value": {
+      "entry_id": "00000000-0000-4000-8000-000000000001",
+      "kind": "timed",
+      "entry_date": "2026-10-26",
+      "project_id": "00000000-0000-4000-8000-000000000002",
+      "description": "Development",
+      "started_at": "2026-10-26T09:03:00+02:00",
+      "stopped_at": "2026-10-26T09:16:00+02:00",
+      "person_id": "00000000-0000-4000-8000-000000000003",
+      "version": 1,
+      "original_seconds": 780,
+      "effective_seconds": 780,
+      "rounding_interval_minutes": null,
+      "export_state": "not_exported",
+      "updated_at": "2026-10-26T07:16:01Z"
+    }
+  },
+  {
+    "name": "settings_write",
+    "schema": "SettingsWrite",
+    "value": {
+      "rounding_interval_minutes": 5,
+      "weekly_target_hours": 35,
+      "visual_indicator": "progress"
+    }
+  },
+  {
+    "name": "settings_response",
+    "schema": "Settings",
+    "value": {
+      "rounding_interval_minutes": 5,
+      "weekly_target_hours": 35,
+      "visual_indicator": "progress",
+      "version": 1
+    }
+  },
+  {
+    "name": "project_list",
+    "schema": "ProjectList",
+    "value": {
+      "items": [
+        {
+          "project_id": "00000000-0000-4000-8000-000000000002",
+          "name": "Example project",
+          "colour": "#654abc",
+          "archived": false
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "entry_list",
+    "schema": "EntryList",
+    "value": {
+      "items": [
+        {
+          "entry_id": "00000000-0000-4000-8000-000000000001",
+          "kind": "timed",
+          "entry_date": "2026-10-26",
+          "project_id": "00000000-0000-4000-8000-000000000002",
+          "description": "Development",
+          "started_at": "2026-10-26T09:03:00+02:00",
+          "stopped_at": "2026-10-26T09:16:00+02:00",
+          "person_id": "00000000-0000-4000-8000-000000000003",
+          "version": 1,
+          "original_seconds": 780,
+          "effective_seconds": 900,
+          "rounding_interval_minutes": 5,
+          "export_state": "not_exported",
+          "updated_at": "2026-10-26T07:16:01Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "version_conflict",
+    "schema": "Error",
+    "value": {
+      "code": "version_conflict",
+      "message": "The entry changed. Retrieve its current version.",
+      "request_id": "00000000-0000-4000-8000-000000000001"
+    }
+  }
+]

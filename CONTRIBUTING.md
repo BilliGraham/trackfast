@@ -3,15 +3,17 @@
 ## Product scope
 
 Build one small step at a time.
-The current step is local time tracking with a widget, projects, and an optional Toggl import.
-The planned product has these parts:
+The current app provides local tracking with a widget, projects, and an optional Toggl import.
+The active phase defines the API contract and tests. See `docs/api-contract.md` and `docs/roadmap.md`.
+Develop the API and polished native app independently. Connect the app after both work.
+The native app includes these parts:
 
 - A timer screen.
 - A list of entries grouped by day.
 - Project setup.
 - A separate widget with three independent tasks.
 
-Do not add reports, calendars, billing, or team administration without a new request.
+Implement each planned feature in its own requested task. Do not deploy services or add billing without a new request.
 
 ## Design principles
 
@@ -47,6 +49,10 @@ cargo build --locked
 ```
 
 Commit `Cargo.lock` when dependencies change.
+For API contract changes, install `tools/requirements-contract.txt` in an isolated Python environment.
+Run `python -B -m unittest discover -s tools -p test_api_contract.py`.
+Use TDD for executable contract checks and behaviour. Record the failing check before implementation and the passing check afterward.
+Schema checks do not prove server behaviour. Add HTTP and database tests when the server exists.
 Use TDD for timer changes. Run one new test before changing the implementation.
 If it already passes, record that result. Do not introduce a defect to force a failure.
 Run the full timer suite after each change.
