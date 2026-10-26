@@ -1,28 +1,53 @@
-# Local operation queue
+# Local operation queue and development transport
 
-Phase 3 starts with `sync-client/`, a separate Rust library.
-It does not send HTTP requests or change the native app.
-The first step supports immutable, duration-only entries with exact recorded seconds.
-It does not split long entries or apply rounding.
+The separate `sync-client/` Rust library provides a durable queue and a loopback HTTP adapter.
+It supports unassigned duration entries with exact recorded seconds and rounding Off.
+The native app is not connected. Timed entries, projects, and settings require further API work.
 
 ## Storage rules
 
 - Save the local entry and its pending operation in one SQLite transaction.
-- Generate the operation UUID once. Keep this key and the entry contents across retries and restarts.
-- Keep the queue bound to one server, tenant, and person. Reject a different scope.
+- Generate each operation UUID once. Preserve the key, content, and expected version across retries and restarts.
+- Bind the queue to one server, tenant, and person. Reject a different scope.
 - Use a separate database file. Reject unrelated databases and newer schema versions.
-- Keep the local entry after confirmation. Remove only the confirmed pending operation.
-- Reject replacement of an existing entry. Edits require a later versioned operation implementation.
+- Confirm the server version and remove the pending operation in one transaction.
+- Keep deletion records so a deleted entry ID cannot be reused.
 
-Only the future database worker must open and use this queue.
-The library has no interface dependency and starts no worker itself.
-The caller must supply a server identifier without credentials. Do not put tokens in the scope or database path.
-SQLite stores entry text without encryption, as the local app does. Use the private application data directory.
+Only one pending operation is allowed per entry. A further edit waits for confirmation or conflict resolution.
+An edit immediately saves its local values. A pending deletion retains the local entry until server confirmation.
+Migration 2 adds versions, deletion records, and conflict state. It preserves pending work from migration 1.
 
-The transport must check the authenticated tenant and person before it sends queued data.
-It must check the response identity, entry fields, and operation receipt before it calls `confirm`.
-An HTTP timeout, failed response, or conflict must not call `confirm`.
-The queue alone cannot prove that a remote server accepted an operation.
+The caller must run database and HTTP work on a worker thread.
+The library starts no worker and has no interface dependency.
+Use a private application data directory. SQLite stores entry text without encryption, as the local app does.
+Do not put credentials in the scope or file path. The transport token remains in memory.
+
+## HTTP delivery
+
+`DevelopmentClient::new` accepts a canonical HTTP address with a loopback IP and explicit port.
+For example, use `http://127.0.0.1:8788`. Hostnames, remote addresses, URL credentials, paths, queries, and fragments are rejected.
+The adapter disables proxies and redirects. It limits request time and response size.
+It does not provide production authentication or TLS. Do not expose the development API through a tunnel.
+
+`sync` checks `GET /v1/me` against the queue's tenant and person before it sends entries.
+It sends each stored operation key as `Idempotency-Key`.
+Edits and deletions also send the stored version as `If-Match`.
+The client checks success status, entry content, ownership, version, and ETag before confirming a create or edit.
+A deletion requires the expected successful no-content response for that request.
+
+Failed authentication, invalid responses, conflicts, timeouts, and server errors keep pending work.
+A sync pass stops at its first failure. Earlier confirmed operations remain confirmed.
+The caller controls retry timing. There is no automatic retry loop or background scheduler yet.
+
+## Conflict handling
+
+A version conflict records conflict state and keeps the local values and original operation key.
+`DevelopmentClient::read` retrieves the current remote duration entry and version for review.
+After the user chooses the local values, the caller can use `Queue::resolve_with_local` with the reviewed remote version.
+This explicit action creates a new operation key and updates the expected version.
+If another client changes the entry again, the next request conflicts again.
+There is no automatic overwrite, merge, or native conflict dialog yet.
+Creation conflicts and remotely deleted entries remain pending for a later recovery workflow.
 
 ## Checks
 
@@ -35,23 +60,28 @@ cargo test --manifest-path sync-client/Cargo.toml --locked --all-targets
 cargo build --manifest-path sync-client/Cargo.toml --locked
 ```
 
-The first six tests failed before implementation. They passed after implementation.
-Additional checks cover database isolation and confirmation of one operation among several.
-Those two checks passed without another implementation change.
-Tests use in-memory SQLite or generated temporary files. They do not open the app database.
+Run the server suite with a disposable Postgres database to test the transport over HTTP.
+See `server.md` for the required environment variable and commands.
+Tests use generated SQLite files or in-memory databases. They never open the native app database.
 
-On October 26, 2026, all eight queue tests and builds passed on Windows and Linux.
-Linux checks ran in a disposable Rust 1.98 container.
-Windows formatting and Clippy checks passed. All 51 native-app tests passed on Windows.
-macOS checks and visual checks did not run for this change. The interface did not change.
+TDD checks failed before implementation for identity discovery, destination validation, HTTP recovery, queued changes, remote inspection, and explicit conflict resolution.
+Additional conflict retention, receipt validation, migration, and transaction rollback checks passed without another implementation change.
+Mutation recovery tests suppress successful responses, reopen the queue, and retry with unchanged operation keys.
+They check the real Postgres entry, operation, and audit counts.
 
-## Next steps
+On October 26, 2026, all 13 queue tests and all 10 server tests passed on Windows and Linux.
+Both crates built on both platforms. Linux checks ran in a disposable Rust 1.98 container.
+Windows formatting and Clippy checks passed for both crates.
+All 51 native-app tests and all 20 Python checks passed on Windows.
+macOS and visual checks did not run. The interface did not change.
 
-1. Add authenticated identity discovery and a transport that checks server receipts.
-2. Test response loss with the real development API. Retry with the same key and contents.
-3. Add versioned edits, deletion, and explicit conflict handling without loss of local work.
-4. Complete the API support for timed entries, projects, settings, and production identity.
-5. Connect the native database worker and interface after the required API operations work.
+## Remaining work
 
-Rounding policies that remain open in `api-contract.md` remain open here.
-This library does not mark work as exported or logged in Xero.
+1. Complete timed entries, projects, settings, list pagination, and shared entry rules in the API.
+2. Select and configure production identity. Google Workspace availability is unconfirmed.
+3. Add scheduled retries, remote change retrieval, and the remaining conflict choices.
+4. Connect the native database worker and interface after the required API operations work.
+5. Add Xero exports and restricted PM reports before the pilot.
+
+The approved rounding and date policies are recorded in `api-contract.md`.
+This development adapter still uses rounding Off. It does not export to Xero or change export states.

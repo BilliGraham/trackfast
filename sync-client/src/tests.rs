@@ -22,6 +22,116 @@ fn queue() -> Queue {
 }
 
 #[test]
+fn version_one_queue_upgrades_without_changing_pending_work() {
+    let owner = scope();
+    let original = entry();
+    let key = Uuid::new_v4();
+    let connection = Connection::open_in_memory().unwrap();
+    connection.execute_batch(MIGRATIONS[0]).unwrap();
+    connection
+        .pragma_update(None, "application_id", APPLICATION_ID)
+        .unwrap();
+    connection.pragma_update(None, "user_version", 1).unwrap();
+    connection
+        .execute(
+            "INSERT INTO scope VALUES(1,?1)",
+            [serde_json::to_string(&owner).unwrap()],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO entries VALUES(?1,?2)",
+            params![
+                original.entry_id.to_string(),
+                serde_json::to_string(&original).unwrap()
+            ],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO pending(operation_id,entry_id) VALUES(?1,?2)",
+            params![key.to_string(), original.entry_id.to_string()],
+        )
+        .unwrap();
+    let mut queue = Queue::prepare(connection, &owner).unwrap();
+    assert_eq!(queue.pending().unwrap()[0].operation_id, key);
+    assert_eq!(queue.pending().unwrap()[0].entry, original);
+    queue.confirm(key).unwrap();
+    queue.replace(&original).unwrap();
+}
+
+#[test]
+fn failed_confirmation_keeps_the_pending_operation_and_version() {
+    let mut queue = queue();
+    let original = entry();
+    let key = queue.enqueue(&original).unwrap();
+    queue.connection.execute_batch("CREATE TRIGGER reject_confirmation BEFORE DELETE ON pending BEGIN SELECT RAISE(ABORT, 'Test failure'); END;").unwrap();
+    assert!(queue.confirm(key).is_err());
+    assert_eq!(queue.pending().unwrap()[0].operation_id, key);
+    let version: i64 = queue
+        .connection
+        .query_row("SELECT server_version FROM entries", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 0);
+}
+
+#[test]
+fn edits_and_deletion_keep_local_work_until_confirmation() {
+    let mut queue = queue();
+    let original = entry();
+    let key = queue.enqueue(&original).unwrap();
+    assert!(queue.replace(&original).is_err());
+    queue.confirm(key).unwrap();
+    let changed = DurationEntry {
+        original_seconds: 10800,
+        ..original.clone()
+    };
+    let edit = queue.replace(&changed).unwrap();
+    assert_eq!(
+        queue.entry(original.entry_id).unwrap(),
+        Some(changed.clone())
+    );
+    assert!(queue.delete(original.entry_id).is_err());
+    assert_eq!(queue.pending().unwrap()[0].operation_id, edit);
+    queue.confirm(edit).unwrap();
+    let deletion = queue.delete(original.entry_id).unwrap();
+    assert_eq!(queue.entry(original.entry_id).unwrap(), Some(changed));
+    queue.confirm(deletion).unwrap();
+    assert_eq!(queue.entry(original.entry_id).unwrap(), None);
+    assert!(queue.enqueue(&original).is_err());
+}
+
+#[test]
+fn conflict_resolution_uses_a_new_key_and_keeps_the_local_values() {
+    let mut queue = queue();
+    let original = entry();
+    let key = queue.enqueue(&original).unwrap();
+    queue.confirm(key).unwrap();
+    let changed = DurationEntry {
+        original_seconds: 10800,
+        ..original
+    };
+    let key = queue.replace(&changed).unwrap();
+    assert!(queue.resolve_with_local(key, 2).is_err());
+    queue
+        .connection
+        .execute(
+            "UPDATE pending SET conflict=1 WHERE operation_id=?1",
+            [key.to_string()],
+        )
+        .unwrap();
+    assert!(queue.resolve_with_local(key, 1).is_err());
+    let resolved = queue.resolve_with_local(key, 2).unwrap();
+    assert_ne!(resolved, key);
+    assert_eq!(queue.pending().unwrap()[0].operation_id, resolved);
+    assert_eq!(queue.entry(changed.entry_id).unwrap(), Some(changed));
+    assert_eq!(
+        queue.operation_details(resolved).unwrap(),
+        ("replace".into(), Some(2))
+    );
+}
+
+#[test]
 fn retry_and_restart_keep_exact_content_and_operation_key() {
     let path = std::env::temp_dir().join(format!("trackfast-queue-{}.db", Uuid::new_v4()));
     let owner = scope();

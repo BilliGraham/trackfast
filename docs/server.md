@@ -7,6 +7,7 @@ This is a development implementation of part of the target OpenAPI contract.
 ## Supported behaviour
 
 - Create, retrieve, replace, and delete completed duration-only entries.
+- Read the authenticated tenant and person through `GET /v1/me` before sync.
 - List the caller's entries within an inclusive date range containing at most 100 results.
 - Preserve exact original seconds. This development slice explicitly uses rounding Off.
 - Derive the owner from a configured development credential.
@@ -51,6 +52,8 @@ Use a fresh UUID in `Idempotency-Key` for each new mutation. Keep that key for i
 Read the ETag before a replacement or deletion. Send it unchanged in If-Match.
 Use the duration-only example in `api/examples.json` with a fresh entry ID.
 The initial server does not implement the settings or projects endpoints in the target contract.
+The separate `sync-client/` library now uses this API. It checks the account before sending entries.
+The native app is not connected. Production identity remains unconfigured.
 
 ## Storage and tests
 
@@ -63,6 +66,10 @@ The service applies bounded database connection, statement, and lock timeouts.
 Set `TRACKFAST_TEST_DATABASE_URL` to a disposable Postgres database before running tests.
 Tests create generated schemas and remove them after success. Failed tests can leave their schemas in that disposable database.
 The test suite fails when the database variable is absent. It does not silently skip integration checks.
+HTTP tests use the real router and Postgres through a loopback TCP listener.
+They suppress the first successful create, edit, and delete response, reopen the queue, and retry each operation.
+The database must contain one entry record and exactly three operation receipts and audit events.
+Other checks cover invalid receipts, account mismatch, and explicit resolution after a conflicting remote edit.
 
 ```text
 cargo fmt --manifest-path server/Cargo.toml --all --check

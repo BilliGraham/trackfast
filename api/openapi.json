@@ -495,6 +495,27 @@
           }
         }
       }
+    },
+    "/v1/me": {
+      "get": {
+        "operationId": "getIdentity",
+        "summary": "Read the authenticated tenant and person.",
+        "responses": {
+          "200": {
+            "description": "The authenticated scope. Do not cache this response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Identity"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -593,7 +614,7 @@
           "started_at",
           "stopped_at"
         ],
-        "description": "The server checks stop > start and derives original seconds. Date assignment remains open."
+        "description": "The server checks stop > start and derives original seconds. The entry keeps its start date in the selected time zone."
       },
       "EntryCreate": {
         "oneOf": [
@@ -689,7 +710,7 @@
           "started_at",
           "stopped_at"
         ],
-        "description": "The server checks stop > start and derives original seconds. Date assignment remains open."
+        "description": "The server checks stop > start and derives original seconds. The entry keeps its start date in the selected time zone."
       },
       "EntryWrite": {
         "oneOf": [
@@ -877,7 +898,7 @@
           "export_state",
           "updated_at"
         ],
-        "description": "The server checks stop > start and derives original seconds. Date assignment remains open."
+        "description": "The server checks stop > start and derives original seconds. The entry keeps its start date in the selected time zone."
       },
       "EntryResponse": {
         "oneOf": [
@@ -1085,6 +1106,24 @@
           "message",
           "request_id"
         ]
+      },
+      "Identity": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tenant_id",
+          "person_id"
+        ],
+        "properties": {
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "person_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
       }
     },
     "parameters": {

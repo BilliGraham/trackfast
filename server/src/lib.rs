@@ -192,8 +192,22 @@ impl IntoResponse for Reply {
     }
 }
 
+async fn identity(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    headers: HeaderMap,
+) -> Result<Reply, ApiError> {
+    let actor = state.actor(&headers)?;
+    Ok(Reply {
+        status: 200,
+        body: Some(json!({"tenant_id":actor.tenant,"person_id":actor.person})),
+        etag: None,
+        location: None,
+    })
+}
+
 pub fn router(state: AppState) -> Router {
     Router::new()
+        .route("/v1/me", get(identity))
         .route("/v1/me/entries", post(entries::create).get(entries::list))
         .route(
             "/v1/me/entries/{entry_id}",

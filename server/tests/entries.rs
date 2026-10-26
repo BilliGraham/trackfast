@@ -124,6 +124,99 @@ fn entry(id: Uuid) -> Value {
 }
 
 #[tokio::test]
+async fn durable_client_recovers_after_lost_mutation_responses() {
+    use std::{
+        collections::HashSet,
+        sync::{Arc, Mutex},
+    };
+    use trackfast_sync::{DurationEntry, Queue, Scope, transport::DevelopmentClient};
+    let f = Fixture::new().await;
+    let identity = f
+        .send("GET", "/v1/me", Some(&f.token), None, None, Value::Null)
+        .await
+        .1;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let scope = Scope {
+        server: format!("http://{}", listener.local_addr().unwrap()),
+        tenant_id: serde_json::from_value(identity["tenant_id"].clone()).unwrap(),
+        person_id: serde_json::from_value(identity["person_id"].clone()).unwrap(),
+    };
+    let lost = Arc::new(Mutex::new(HashSet::new()));
+    let app = f.app.clone().layer(axum::middleware::from_fn(
+        move |req: axum::extract::Request, next: axum::middleware::Next| {
+            let lost = lost.clone();
+            async move {
+                let method = req.method().to_string();
+                let response = next.run(req).await;
+                if method != "GET" && lost.lock().unwrap().insert(method) {
+                    axum::response::IntoResponse::into_response(StatusCode::SERVICE_UNAVAILABLE)
+                } else {
+                    response
+                }
+            }
+        },
+    ));
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let path = std::env::temp_dir().join(format!("trackfast-http-{}.db", Uuid::new_v4()));
+    let token = f.token.clone();
+    let other = f.other.clone();
+    tokio::task::spawn_blocking(move || {
+        let local = DurationEntry {
+            entry_id: Uuid::new_v4(),
+            entry_date: "2026-10-26".parse().unwrap(),
+            description: "Recovery test".into(),
+            original_seconds: 781,
+        };
+        let key;
+        {
+            let mut queue = Queue::open(&path, &scope).unwrap();
+            key = queue.enqueue(&local).unwrap();
+            let wrong = DevelopmentClient::new(scope.clone(), &other).unwrap();
+            assert!(wrong.sync(&mut queue).is_err());
+            assert_eq!(queue.pending().unwrap()[0].operation_id, key);
+            let client = DevelopmentClient::new(scope.clone(), &token).unwrap();
+            assert!(client.sync(&mut queue).is_err());
+            assert_eq!(queue.pending().unwrap()[0].operation_id, key);
+        }
+        {
+            let mut queue = Queue::open(&path, &scope).unwrap();
+            assert_eq!(queue.pending().unwrap()[0].operation_id, key);
+            let client = DevelopmentClient::new(scope.clone(), &token).unwrap();
+            assert_eq!(client.sync(&mut queue).unwrap(), 1);
+            assert!(queue.pending().unwrap().is_empty());
+            assert_eq!(queue.entry(local.entry_id).unwrap(), Some(local.clone()));
+            let changed = DurationEntry {
+                original_seconds: 10800,
+                ..local.clone()
+            };
+            let edit = queue.replace(&changed).unwrap();
+            assert!(client.sync(&mut queue).is_err());
+            drop(queue);
+            let mut queue = Queue::open(&path, &scope).unwrap();
+            assert_eq!(queue.pending().unwrap()[0].operation_id, edit);
+            assert_eq!(client.sync(&mut queue).unwrap(), 1);
+            let deletion = queue.delete(local.entry_id).unwrap();
+            assert!(client.sync(&mut queue).is_err());
+            drop(queue);
+            let mut queue = Queue::open(&path, &scope).unwrap();
+            assert_eq!(queue.pending().unwrap()[0].operation_id, deletion);
+            assert_eq!(client.sync(&mut queue).unwrap(), 1);
+            assert_eq!(queue.entry(local.entry_id).unwrap(), None);
+        }
+        std::fs::remove_file(path).unwrap();
+    })
+    .await
+    .unwrap();
+    assert_eq!(f.count("api_entries").await, 1);
+    assert_eq!(f.count("api_operations").await, 3);
+    assert_eq!(f.count("api_audit").await, 3);
+    server.abort();
+    f.close().await;
+}
+
+#[tokio::test]
 async fn simultaneous_retries_make_one_change() {
     let f = Fixture::new().await;
     let id = Uuid::new_v4();
@@ -150,6 +243,175 @@ async fn simultaneous_retries_make_one_change() {
     assert_eq!(first, second);
     assert_eq!(f.count("api_audit").await, 1);
     assert_eq!(f.count("api_operations").await, 1);
+    f.close().await;
+}
+
+#[tokio::test]
+async fn client_conflict_keeps_local_change_and_original_operation_key() {
+    use trackfast_sync::{
+        DurationEntry, Queue, Scope,
+        transport::{DevelopmentClient, SyncError},
+    };
+    let f = Fixture::new().await;
+    let identity = f
+        .send("GET", "/v1/me", Some(&f.token), None, None, Value::Null)
+        .await
+        .1;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let scope = Scope {
+        server: format!("http://{}", listener.local_addr().unwrap()),
+        tenant_id: serde_json::from_value(identity["tenant_id"].clone()).unwrap(),
+        person_id: serde_json::from_value(identity["person_id"].clone()).unwrap(),
+    };
+    let app = f.app.clone();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let path = std::env::temp_dir().join(format!("trackfast-conflict-{}.db", Uuid::new_v4()));
+    let local = DurationEntry {
+        entry_id: Uuid::new_v4(),
+        entry_date: "2026-10-26".parse().unwrap(),
+        description: "Local work".into(),
+        original_seconds: 781,
+    };
+    let token = f.token.clone();
+    let (path, scope, local) = tokio::task::spawn_blocking(move || {
+        let mut queue = Queue::open(&path, &scope).unwrap();
+        queue.enqueue(&local).unwrap();
+        DevelopmentClient::new(scope.clone(), &token)
+            .unwrap()
+            .sync(&mut queue)
+            .unwrap();
+        (path, scope, local)
+    })
+    .await
+    .unwrap();
+    let mut remote = entry(local.entry_id);
+    remote.as_object_mut().unwrap().remove("entry_id");
+    remote["description"] = json!("Changed on another client");
+    assert_eq!(
+        f.send(
+            "PUT",
+            &format!("/v1/me/entries/{}", local.entry_id),
+            Some(&f.token),
+            Some(Uuid::new_v4()),
+            Some("\"1\""),
+            remote
+        )
+        .await
+        .0,
+        200
+    );
+    let token = f.token.clone();
+    tokio::task::spawn_blocking(move || {
+        let changed = DurationEntry {
+            original_seconds: 10800,
+            ..local
+        };
+        let key;
+        {
+            let mut queue = Queue::open(&path, &scope).unwrap();
+            key = queue.replace(&changed).unwrap();
+            assert!(matches!(
+                DevelopmentClient::new(scope.clone(), &token)
+                    .unwrap()
+                    .sync(&mut queue),
+                Err(SyncError::Conflict)
+            ));
+        }
+        {
+            let mut queue = Queue::open(&path, &scope).unwrap();
+            assert_eq!(queue.pending().unwrap()[0].operation_id, key);
+            assert_eq!(
+                queue.entry(changed.entry_id).unwrap(),
+                Some(changed.clone())
+            );
+            assert!(matches!(
+                DevelopmentClient::new(scope.clone(), &token)
+                    .unwrap()
+                    .sync(&mut queue),
+                Err(SyncError::Conflict)
+            ));
+            assert_eq!(queue.pending().unwrap()[0].operation_id, key);
+            let client = DevelopmentClient::new(scope, &token).unwrap();
+            let remote = client.read(changed.entry_id).unwrap();
+            assert_eq!(remote.version, 2);
+            assert_eq!(remote.entry.description, "Changed on another client");
+            let resolved = queue.resolve_with_local(key, remote.version).unwrap();
+            assert_ne!(key, resolved);
+            assert_eq!(client.sync(&mut queue).unwrap(), 1);
+            assert_eq!(client.read(changed.entry_id).unwrap().entry, changed);
+        }
+        std::fs::remove_file(path).unwrap();
+    })
+    .await
+    .unwrap();
+    assert_eq!(f.count("api_audit").await, 3);
+    server.abort();
+    f.close().await;
+}
+
+#[tokio::test]
+async fn invalid_receipt_does_not_remove_local_work() {
+    use trackfast_sync::{
+        DurationEntry, Queue, Scope,
+        transport::{DevelopmentClient, SyncError},
+    };
+    let f = Fixture::new().await;
+    let identity = f
+        .send("GET", "/v1/me", Some(&f.token), None, None, Value::Null)
+        .await
+        .1;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let scope = Scope {
+        server: format!("http://{}", listener.local_addr().unwrap()),
+        tenant_id: serde_json::from_value(identity["tenant_id"].clone()).unwrap(),
+        person_id: serde_json::from_value(identity["person_id"].clone()).unwrap(),
+    };
+    let app = f.app.clone().layer(axum::middleware::from_fn(
+        |req: axum::extract::Request, next: axum::middleware::Next| async {
+            let create = req.method() == "POST";
+            let response = next.run(req).await;
+            if create {
+                let (parts, body) = response.into_parts();
+                let bytes = to_bytes(body, 32768).await.unwrap();
+                let mut value: Value = serde_json::from_slice(&bytes).unwrap();
+                value["original_seconds"] = json!(1);
+                axum::response::Response::from_parts(parts, Body::from(value.to_string()))
+            } else {
+                response
+            }
+        },
+    ));
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let token = f.token.clone();
+    tokio::task::spawn_blocking(move || {
+        let path = std::env::temp_dir().join(format!("trackfast-receipt-{}.db", Uuid::new_v4()));
+        {
+            let mut queue = Queue::open(&path, &scope).unwrap();
+            let local = DurationEntry {
+                entry_id: Uuid::new_v4(),
+                entry_date: "2026-10-26".parse().unwrap(),
+                description: "Receipt test".into(),
+                original_seconds: 781,
+            };
+            let key = queue.enqueue(&local).unwrap();
+            assert!(matches!(
+                DevelopmentClient::new(scope, &token)
+                    .unwrap()
+                    .sync(&mut queue),
+                Err(SyncError::InvalidReceipt)
+            ));
+            assert_eq!(queue.pending().unwrap()[0].operation_id, key);
+            assert_eq!(queue.entry(local.entry_id).unwrap(), Some(local));
+        }
+        std::fs::remove_file(path).unwrap();
+    })
+    .await
+    .unwrap();
+    server.abort();
     f.close().await;
 }
 

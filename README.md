@@ -10,7 +10,9 @@ The GitHub repository is BilliGraham/trackfast. The user selected public visibil
 The separate [development API](docs/server.md) now stores duration-only entries in Postgres.
 It uses local development credentials. The desktop app is not connected to it.
 Phase 3 starts with a separate [durable operation queue](docs/sync-client.md).
-The queue has no HTTP transport yet. The desktop app still uses its existing local database.
+The queue can create, edit, and delete duration entries through the local development API.
+It checks account identity and responses, preserves retry keys, and retains conflicts for explicit resolution.
+The desktop app still uses its existing local database.
 
 ## Current scope
 

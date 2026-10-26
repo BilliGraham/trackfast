@@ -19,10 +19,14 @@ Keep production integration credentials on the server. Keep local work when the 
 
 Phase 1 supplied the draft contract. Phase 2A now has a local development API for exact duration-only entries.
 See server.md for supported operations, authentication limits, and Postgres checks.
-At the user's request, phase 3 now starts with the separate durable queue in `sync-client/`.
+At the user's request, phase 3 now has a separate durable queue and local HTTP transport in `sync-client/`.
+Create, edit, and delete retries preserve their keys across queue restarts. Conflicts retain local work.
 See sync-client.md for its scope and the remaining connection work.
 Phase 2 API and app prerequisites remain incomplete. The queue does not connect the daily-use app yet.
 Review the open decisions in api-contract.md before implementing dependent behaviour.
+The user approved half-interval ties rounding up, visible zero totals without export, and setting changes for new entries only.
+Timed entries use their start date in the selected time zone. These rules are recorded but are not yet implemented in the development API.
+Google Workspace availability is unconfirmed. Select and configure the production identity provider before shared access.
 Start phase 2A with duration-only entry creation, retrieval, replacement, and deletion.
 Do not connect the native app to HTTP during phase 1 or phase 2.
 

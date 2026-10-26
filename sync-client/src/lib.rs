@@ -4,8 +4,13 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use uuid::Uuid;
 
+pub mod transport;
+
 const APPLICATION_ID: i32 = 0x54465351;
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/001_queue.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/001_queue.sql"),
+    include_str!("../migrations/002_changes.sql"),
+];
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Scope {
@@ -36,6 +41,8 @@ pub enum Error {
     DuplicateEntry,
     UnknownOperation,
     IncompatibleDatabase,
+    PendingOperation,
+    UnknownEntry,
 }
 
 fn storage<E>(_: E) -> Error {
@@ -51,6 +58,10 @@ impl std::fmt::Display for Error {
             Self::DuplicateEntry => "This entry already exists in the local queue.",
             Self::UnknownOperation => "The pending operation is unavailable.",
             Self::IncompatibleDatabase => "This file is not a compatible queue database.",
+            Self::PendingOperation => {
+                "Confirm or resolve the pending operation before another change."
+            }
+            Self::UnknownEntry => "The confirmed local entry is unavailable.",
         })
     }
 }
@@ -59,9 +70,104 @@ impl std::error::Error for Error {}
 
 pub struct Queue {
     connection: Connection,
+    scope: Scope,
 }
 
 impl Queue {
+    /// Use only after the user reviews the current remote version and chooses local work.
+    pub fn resolve_with_local(
+        &mut self,
+        operation_id: Uuid,
+        remote_version: i64,
+    ) -> Result<Uuid, Error> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let previous: Option<i64> = tx.query_row("SELECT expected_version FROM pending WHERE operation_id=?1 AND conflict=1 AND action IN ('replace','delete')", [operation_id.to_string()], |r| r.get(0)).optional().map_err(storage)?;
+        let previous = previous.ok_or(Error::UnknownOperation)?;
+        if remote_version <= previous || remote_version == i64::MAX {
+            return Err(Error::UnknownOperation);
+        }
+        let key = Uuid::new_v4();
+        tx.execute("UPDATE pending SET operation_id=?2,expected_version=?3,conflict=0 WHERE operation_id=?1", params![operation_id.to_string(),key.to_string(),remote_version]).map_err(storage)?;
+        tx.commit().map_err(storage)?;
+        Ok(key)
+    }
+
+    fn mark_conflict(&mut self, operation_id: Uuid) -> Result<(), Error> {
+        self.connection
+            .execute(
+                "UPDATE pending SET conflict=1 WHERE operation_id=?1",
+                [operation_id.to_string()],
+            )
+            .map_err(storage)?;
+        Ok(())
+    }
+
+    pub fn replace(&mut self, entry: &DurationEntry) -> Result<Uuid, Error> {
+        validate(entry)?;
+        self.change(entry.entry_id, Some(entry))
+    }
+
+    pub fn delete(&mut self, entry_id: Uuid) -> Result<Uuid, Error> {
+        self.change(entry_id, None)
+    }
+
+    fn change(
+        &mut self,
+        entry_id: Uuid,
+        replacement: Option<&DurationEntry>,
+    ) -> Result<Uuid, Error> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let id = entry_id.to_string();
+        let pending: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM pending WHERE entry_id=?1)",
+                [&id],
+                |r| r.get(0),
+            )
+            .map_err(storage)?;
+        if pending {
+            return Err(Error::PendingOperation);
+        }
+        let version: Option<i64> = tx
+            .query_row(
+                "SELECT server_version FROM entries WHERE entry_id=?1 AND NOT deleted",
+                [&id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(storage)?;
+        let version = version
+            .filter(|v| *v > 0 && *v < i64::MAX)
+            .ok_or(Error::UnknownEntry)?;
+        if let Some(entry) = replacement {
+            tx.execute(
+                "UPDATE entries SET body=?2 WHERE entry_id=?1",
+                params![id, serde_json::to_string(entry).map_err(storage)?],
+            )
+            .map_err(storage)?;
+        }
+        let key = Uuid::new_v4();
+        tx.execute("INSERT INTO pending(operation_id,entry_id,action,expected_version) VALUES (?1,?2,?3,?4)", params![key.to_string(),id,if replacement.is_some() {"replace"} else {"delete"},version]).map_err(storage)?;
+        tx.commit().map_err(storage)?;
+        Ok(key)
+    }
+
+    fn operation_details(&self, key: Uuid) -> Result<(String, Option<i64>), Error> {
+        self.connection
+            .query_row(
+                "SELECT action,expected_version FROM pending WHERE operation_id=?1",
+                [key.to_string()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(storage)
+    }
+
     /// Open a separate queue database from its future database worker thread.
     /// Never use the native app database path here.
     pub fn open(path: &Path, scope: &Scope) -> Result<Self, Error> {
@@ -118,18 +224,15 @@ impl Queue {
             return Err(Error::ScopeMismatch);
         }
         tx.commit().map_err(storage)?;
-        Ok(Self { connection })
+        Ok(Self {
+            connection,
+            scope: scope.clone(),
+        })
     }
 
     /// Save one immutable duration entry and its pending creation together.
     pub fn enqueue(&mut self, entry: &DurationEntry) -> Result<Uuid, Error> {
-        if entry.original_seconds == 0
-            || entry.original_seconds > 9_007_199_254_740_991
-            || entry.description.chars().count() > 2000
-            || !(1..=9999).contains(&entry.entry_date.year())
-        {
-            return Err(Error::InvalidEntry);
-        }
+        validate(entry)?;
         let body = serde_json::to_string(entry).map_err(storage)?;
         let operation_id = Uuid::new_v4();
         let tx = self
@@ -168,16 +271,29 @@ impl Queue {
     /// Remove an operation only after the transport confirms its server receipt.
     /// The caller must first verify the authenticated identity and receipt contents.
     pub fn confirm(&mut self, operation_id: Uuid) -> Result<(), Error> {
-        let changed = self
+        let tx = self
             .connection
-            .execute(
-                "DELETE FROM pending WHERE operation_id = ?1",
-                [operation_id.to_string()],
-            )
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        if changed == 0 {
-            return Err(Error::UnknownOperation);
-        }
+        let key = operation_id.to_string();
+        let operation: Option<(String, String, Option<i64>)> = tx
+            .query_row(
+                "SELECT entry_id,action,expected_version FROM pending WHERE operation_id=?1",
+                [&key],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .map_err(storage)?;
+        let (id, action, expected) = operation.ok_or(Error::UnknownOperation)?;
+        let version = expected.unwrap_or(0).checked_add(1).ok_or(Error::Storage)?;
+        tx.execute(
+            "UPDATE entries SET server_version=?2,deleted=?3 WHERE entry_id=?1",
+            params![id, version, action == "delete"],
+        )
+        .map_err(storage)?;
+        tx.execute("DELETE FROM pending WHERE operation_id=?1", [&key])
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
         Ok(())
     }
 
@@ -185,7 +301,7 @@ impl Queue {
         let body: Option<String> = self
             .connection
             .query_row(
-                "SELECT body FROM entries WHERE entry_id = ?1",
+                "SELECT body FROM entries WHERE entry_id = ?1 AND NOT deleted",
                 [entry_id.to_string()],
                 |r| r.get(0),
             )
@@ -194,6 +310,17 @@ impl Queue {
         body.map(|body| serde_json::from_str(&body).map_err(storage))
             .transpose()
     }
+}
+
+fn validate(entry: &DurationEntry) -> Result<(), Error> {
+    if entry.original_seconds == 0
+        || entry.original_seconds > 9_007_199_254_740_991
+        || entry.description.chars().count() > 2000
+        || !(1..=9999).contains(&entry.entry_date.year())
+    {
+        return Err(Error::InvalidEntry);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

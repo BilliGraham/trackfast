@@ -49,6 +49,14 @@ class ApiContract(unittest.TestCase):
     def duration(self):
         return copy.deepcopy(next(c['value'] for c in self.cases if c['name'] == 'duration_create'))
 
+    def test_identity_response_requires_both_scope_ids(self):
+        self.assertIn('/v1/me', self.document['paths'])
+        value = {'tenant_id': '00000000-0000-4000-8000-000000000001',
+                 'person_id': '00000000-0000-4000-8000-000000000002'}
+        self.validator('Identity').validate(value)
+        del value['tenant_id']
+        self.assertFalse(self.validator('Identity').is_valid(value))
+
     def test_duration_only_rejects_invented_timestamps(self):
         value = self.duration()
         value['started_at'] = '2026-10-26T09:03:00Z'

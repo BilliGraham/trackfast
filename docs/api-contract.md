@@ -1,7 +1,7 @@
 # API contract: phase 1
 
 Status: target contract. A limited development implementation now exists in `server/`.
-See [server scope](server.md) for supported operations and restrictions. The desktop HTTP adapter does not exist yet.
+See [server scope](server.md) for supported operations and restrictions. The development queue now has a loopback HTTP adapter. The native app is not connected.
 
 The machine-readable contract is [OpenAPI](../api/openapi.json).
 Client examples are in [examples.json](../api/examples.json).
@@ -31,8 +31,8 @@ The three-row widget limit does not limit the number of stored entries.
 Overlaps never divide or reduce an entry. A three-hour entry remains one entry.
 
 Entry dates are calendar dates, not timestamps. Preserve a duration-only entry's selected date.
-Timed date assignment across midnight, travel, and time zones remains open.
-Do not implement automatic splitting or date reassignment before that decision.
+Timed entries keep their start date in the selected time zone. Do not split an entry at midnight.
+Preserve that assigned date when the person later changes their time zone.
 
 ## Rounding and settings
 
@@ -47,7 +47,7 @@ Aggregate effective durations without another rounding pass.
 The entry response includes its applied interval, original duration, and effective duration.
 The server calculates effective duration. Clients cannot supply an authoritative effective duration.
 The create draft uses the person's server setting. Offline setting snapshots require a decision before sync work.
-Do not infer recalculation behaviour for existing entries from this draft.
+Setting changes apply only to new entries. Existing entries keep their applied rounding interval.
 
 Personal settings contain separate rounding, visual indicator, and weekly target fields.
 The weekly target defaults to 35 hours. It does not cap, divide, or alter recorded time.
@@ -58,18 +58,19 @@ The schema requires a positive weekly target. An upper limit remains open.
 Xero accepts whole-minute durations. Trackfast preserves seconds when rounding is off.
 The treatment of sub-minute remainders during Xero export remains open. Do not silently truncate them.
 
-The user explicitly left these rules open:
+The user approved these rules on October 26, 2026:
 
-- Exact half-interval ties.
-- Entries whose rounded duration is zero.
-- Changes to settings for existing, exported, or invoiced entries.
+- Exact half-interval ties round up.
+- Entries whose rounded duration is zero remain visible but are not exported.
+- Setting changes apply only to new entries. Existing, exported, and invoiced entries retain their applied setting.
 
-Implement dependent calculations only after these decisions. Schema examples do not resolve them.
+Offline setting snapshots and Xero sub-minute remainders still require decisions.
 
 ## Initial operations
 
 | Operation | Purpose |
 | --- | --- |
+| `GET /v1/me` | Read the authenticated tenant and person before sync. |
 | `GET /v1/projects` | List projects available for the person's own time entries. |
 | `POST /v1/me/entries` | Create a completed entry with a stable client ID. |
 | `GET /v1/me/entries` | List the person's entries in a bounded date range. |
@@ -80,7 +81,8 @@ Implement dependent calculations only after these decisions. Schema examples do 
 | `PUT /v1/me/settings` | Replace personal settings with an If-Match precondition. |
 
 These endpoints form a proposed version 1 contract. The limited local implementation is not a deployed service.
-Use bearer access tokens. Define Google sign-in and token lifecycle before server implementation.
+Use bearer access tokens. Select the production identity provider and token lifecycle before shared deployment.
+Google Workspace availability is unconfirmed. The local development adapter does not establish production membership.
 Validate token signature, issuer, audience, and expiry. Derive tenant and person from the verified identity.
 Do not trust a caller-supplied person ID, company domain, or role.
 Return 404 for an entry outside the caller's scope. Do not disclose whether another person owns that ID.
