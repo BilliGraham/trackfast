@@ -66,7 +66,7 @@ fn entry_body(body: &[u8], create: bool) -> Result<(Option<Uuid>, Value), ApiErr
     Ok((entry_id, Value::Object(fields)))
 }
 
-fn operation_key(headers: &HeaderMap) -> Result<Uuid, ApiError> {
+pub(crate) fn operation_key(headers: &HeaderMap) -> Result<Uuid, ApiError> {
     headers
         .get("idempotency-key")
         .and_then(|v| v.to_str().ok())
@@ -74,7 +74,7 @@ fn operation_key(headers: &HeaderMap) -> Result<Uuid, ApiError> {
         .ok_or_else(bad_request)
 }
 
-fn precondition(headers: &HeaderMap) -> Result<i64, ApiError> {
+pub(crate) fn precondition(headers: &HeaderMap) -> Result<i64, ApiError> {
     let raw = headers
         .get("if-match")
         .ok_or(ApiError(
@@ -165,17 +165,8 @@ async fn mutate(
     let request = json!({"action":action,"entry_id":id,"body":body,"version":expected});
     let mut client = state.connect().await?;
     let tx = client.transaction().await.map_err(internal)?;
-    tx.execute("INSERT INTO api_operations(tenant_id,person_id,operation_id,request) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING", &[&actor.tenant,&actor.person,&key,&request]).await.map_err(internal)?;
-    let operation = tx.query_one("SELECT request,response FROM api_operations WHERE tenant_id=$1 AND person_id=$2 AND operation_id=$3 FOR UPDATE", &[&actor.tenant,&actor.person,&key]).await.map_err(internal)?;
-    if operation.get::<_, Value>(0) != request {
-        return Err(ApiError(
-            StatusCode::CONFLICT,
-            "idempotency_conflict",
-            "Use the same operation key only for the same request.",
-        ));
-    }
-    if let Some(value) = operation.get::<_, Option<Value>>(1) {
-        return serde_json::from_value(value).map_err(internal);
+    if let Some(reply) = crate::operations::replay(&tx, actor, key, &request).await? {
+        return Ok(reply);
     }
     let saved = tx.query_opt("SELECT version,deleted,data FROM api_entries WHERE tenant_id=$1 AND person_id=$2 AND entry_id=$3 FOR UPDATE", &[&actor.tenant,&actor.person,&id]).await.map_err(internal)?;
     let version = if action == "create" {
@@ -202,12 +193,22 @@ async fn mutate(
         }
         version.checked_add(1).ok_or_else(|| internal(()))?
     };
+    let interval = if action == "create" {
+        crate::settings::current(&tx, actor).await?.1["rounding_interval_minutes"].clone()
+    } else {
+        saved.as_ref().unwrap().get::<_, Value>(2)["rounding_interval_minutes"].clone()
+    };
     let mut data = body.unwrap_or_else(|| saved.as_ref().unwrap().get(2));
     data["entry_id"] = json!(id);
     data["person_id"] = json!(actor.person);
     data["version"] = json!(version);
-    data["effective_seconds"] = data["original_seconds"].clone();
-    data["rounding_interval_minutes"] = Value::Null;
+    data["effective_seconds"] = json!(crate::settings::effective_seconds(
+        data["original_seconds"]
+            .as_i64()
+            .ok_or_else(|| internal(()))?,
+        &interval
+    )?);
+    data["rounding_interval_minutes"] = interval;
     data["export_state"] = json!("not_exported");
     data["updated_at"] = json!(Utc::now().to_rfc3339());
     if action == "create" {
@@ -241,7 +242,7 @@ async fn mutate(
             None
         },
     };
-    tx.execute("UPDATE api_operations SET response=$4 WHERE tenant_id=$1 AND person_id=$2 AND operation_id=$3", &[&actor.tenant,&actor.person,&key,&serde_json::to_value(&reply).map_err(internal)?]).await.map_err(internal)?;
+    crate::operations::record(&tx, actor, key, &reply).await?;
     tx.commit().await.map_err(internal)?;
     Ok(reply)
 }

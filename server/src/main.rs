@@ -43,7 +43,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|_| "Database migration failed.")?;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8788").await?;
     println!(
-        "Development API: http://127.0.0.1:8788. Rounding is Off. Google sign-in is not implemented."
+        "Development API: http://127.0.0.1:8788. Personal rounding defaults to five minutes. Production sign-in is not implemented."
     );
     axum::serve(listener, router(state))
         .with_graceful_shutdown(async {

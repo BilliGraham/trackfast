@@ -13,6 +13,8 @@ Phase 3 starts with a separate [durable operation queue](docs/sync-client.md).
 The queue can create, edit, and delete duration entries through the local development API.
 It checks account identity and responses, preserves retry keys, and retains conflicts for explicit resolution.
 The desktop app still uses its existing local database.
+The API now has [personal settings](docs/settings.md) for rounding, the weekly target, and the visual indicator.
+Defaults are five-minute rounding, 35 hours per week, and the progress indicator. The native settings interface is not connected yet.
 
 ## Current scope
 

@@ -25,7 +25,10 @@ See sync-client.md for its scope and the remaining connection work.
 Phase 2 API and app prerequisites remain incomplete. The queue does not connect the daily-use app yet.
 Review the open decisions in api-contract.md before implementing dependent behaviour.
 The user approved half-interval ties rounding up, visible zero totals without export, and setting changes for new entries only.
-Timed entries use their start date in the selected time zone. These rules are recorded but are not yet implemented in the development API.
+Personal settings and duration rounding now work in the API. New accounts default to five minutes, 35 weekly hours, and the progress indicator.
+Existing entries retain their applied rounding interval. The native settings screen is not connected yet.
+Timed entries will use their start date in the selected time zone. Timed-entry API support remains unfinished.
+Calendar-based holiday and leave adjustments are later work. Keep the configurable base target separate from calculated weekly adjustments.
 Google Workspace availability is unconfirmed. Select and configure the production identity provider before shared access.
 Start phase 2A with duration-only entry creation, retrieval, replacement, and deletion.
 Do not connect the native app to HTTP during phase 1 or phase 2.

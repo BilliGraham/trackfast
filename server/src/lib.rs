@@ -1,4 +1,6 @@
 mod entries;
+mod operations;
+mod settings;
 
 use axum::{
     Json, Router,
@@ -14,7 +16,10 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio_postgres::{Client, Config, NoTls};
 use uuid::Uuid;
 
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/001_entries.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/001_entries.sql"),
+    include_str!("../migrations/002_settings.sql"),
+];
 
 #[derive(Clone, Copy)]
 struct Actor {
@@ -29,7 +34,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Creates a development adapter with fixed identities and rounding disabled.
+    /// Creates a development adapter with fixed identities and personal settings.
     /// The caller must bind its HTTP listener to loopback only.
     pub fn development(mut config: Config, credentials: Vec<(String, Uuid, Uuid)>) -> Self {
         config.connect_timeout(Duration::from_secs(5));
@@ -208,6 +213,10 @@ async fn identity(
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/v1/me", get(identity))
+        .route(
+            "/v1/me/settings",
+            get(settings::read).put(settings::replace),
+        )
         .route("/v1/me/entries", post(entries::create).get(entries::list))
         .route(
             "/v1/me/entries/{entry_id}",

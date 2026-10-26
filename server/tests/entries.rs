@@ -9,6 +9,9 @@ use tower::ServiceExt;
 use trackfast_api::{AppState, router};
 use uuid::Uuid;
 
+#[path = "cases/settings.rs"]
+mod settings;
+
 struct Fixture {
     app: Router,
     state: AppState,
@@ -512,8 +515,9 @@ async fn persistent_entry_workflow_retries_conflicts_and_deletion() {
         )
         .await;
     assert_eq!(create.0, StatusCode::CREATED);
-    assert_eq!(create.1["effective_seconds"], 781);
-    assert_eq!(create.1["rounding_interval_minutes"], Value::Null);
+    assert_eq!(create.1["original_seconds"], 781);
+    assert_eq!(create.1["effective_seconds"], 900);
+    assert_eq!(create.1["rounding_interval_minutes"], 5);
     assert_eq!(create.2.as_deref(), Some("\"1\""));
     f.app = router(f.state.clone());
     let read = f

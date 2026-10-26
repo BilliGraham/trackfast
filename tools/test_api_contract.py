@@ -95,6 +95,18 @@ class ApiContract(unittest.TestCase):
                  'visual_indicator': 'progress'}
         self.assertFalse(self.validator('SettingsWrite').is_valid(value))
 
+    def test_settings_defaults_and_independent_fields(self):
+        fields = self.document['components']['schemas']['SettingsWrite']['properties']
+        self.assertEqual(fields['rounding_interval_minutes']['default'], 5)
+        self.assertEqual(fields['weekly_target_hours']['default'], 35)
+        self.assertEqual(fields['visual_indicator']['default'], 'progress')
+        for interval in (None, 5):
+            for indicator in ('progress', 'glass'):
+                self.validator('SettingsWrite').validate({
+                    'rounding_interval_minutes': interval,
+                    'weekly_target_hours': 32.5,
+                    'visual_indicator': indicator})
+
     def test_concurrency_errors_have_actionable_codes(self):
         responses = self.document['paths']['/v1/me/entries/{entry_id}']['put']['responses']
         for status in ('401', '404', '409', '412', '422', '428'):

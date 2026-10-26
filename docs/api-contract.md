@@ -46,14 +46,16 @@ Aggregate effective durations without another rounding pass.
 
 The entry response includes its applied interval, original duration, and effective duration.
 The server calculates effective duration. Clients cannot supply an authoritative effective duration.
-The create draft uses the person's server setting. Offline setting snapshots require a decision before sync work.
+The current API uses the person's server setting at first successful creation. Offline recording-time snapshots require a decision before the native app connects.
 Setting changes apply only to new entries. Existing entries keep their applied rounding interval.
 
 Personal settings contain separate rounding, visual indicator, and weekly target fields.
 The weekly target defaults to 35 hours. It does not cap, divide, or alter recorded time.
-The visual indicator can be a week glass or simple progress display. Its initial default remains open.
+The visual indicator can be a week glass or simple progress display. The default is the progress display.
 For this draft, the rounding field accepts Off or 5. Further intervals remain open.
 The schema requires a positive weekly target. An upper limit remains open.
+The target is a configurable base value. Calendar-based holiday and leave adjustments remain later work.
+See [implemented settings](settings.md) for version checks, retries, and the applied rounding policy.
 
 Xero accepts whole-minute durations. Trackfast preserves seconds when rounding is off.
 The treatment of sub-minute remainders during Xero export remains open. Do not silently truncate them.

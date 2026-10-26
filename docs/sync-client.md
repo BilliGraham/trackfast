@@ -1,8 +1,9 @@
 # Local operation queue and development transport
 
 The separate `sync-client/` Rust library provides a durable queue and a loopback HTTP adapter.
-It supports unassigned duration entries with exact recorded seconds and rounding Off.
-The native app is not connected. Timed entries, projects, and settings require further API work.
+It supports unassigned duration entries. Original seconds remain exact, and response checks support rounding Off or five-minute rounding.
+The native app is not connected. Timed entries and projects require further API work.
+Personal settings now work in the API. The client does not queue settings changes yet.
 
 ## Storage rules
 
@@ -77,11 +78,12 @@ macOS and visual checks did not run. The interface did not change.
 
 ## Remaining work
 
-1. Complete timed entries, projects, settings, list pagination, and shared entry rules in the API.
+1. Complete timed entries, projects, list pagination, and the remaining shared entry rules in the API.
 2. Select and configure production identity. Google Workspace availability is unconfirmed.
 3. Add scheduled retries, remote change retrieval, and the remaining conflict choices.
 4. Connect the native database worker and interface after the required API operations work.
 5. Add Xero exports and restricted PM reports before the pilot.
 
 The approved rounding and date policies are recorded in `api-contract.md`.
-This development adapter still uses rounding Off. It does not export to Xero or change export states.
+Remote entry reads expose the original duration, effective duration, and applied interval.
+This development adapter does not export to Xero or change export states.

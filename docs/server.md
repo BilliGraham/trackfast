@@ -1,4 +1,4 @@
-# Development API: phase 2A, first slice
+# Development API
 
 The standalone Rust service in `server/` uses axum and Postgres.
 It does not change the native app or connect to Xero.
@@ -9,7 +9,8 @@ This is a development implementation of part of the target OpenAPI contract.
 - Create, retrieve, replace, and delete completed duration-only entries.
 - Read the authenticated tenant and person through `GET /v1/me` before sync.
 - List the caller's entries within an inclusive date range containing at most 100 results.
-- Preserve exact original seconds. This development slice explicitly uses rounding Off.
+- Preserve exact original seconds and calculate effective seconds with the entry's applied rounding interval.
+- Read and replace personal rounding, weekly target, and visual indicator settings.
 - Derive the owner from a configured development credential.
 - Require an operation key for mutations and If-Match for replacement and deletion.
 - Replay accepted operations without duplicate changes or audit events.
@@ -17,10 +18,10 @@ This is a development implementation of part of the target OpenAPI contract.
 - Retain deletion records and reject reuse of a deleted entry ID for the same person.
 
 Only unassigned entries with `project_id: null` are supported.
-Project access, timed entries, personal settings, rounding, and cursor pagination remain later slices.
+Project access, timed entries, and cursor pagination remain later slices.
 More than 100 matching entries returns a validation error. It never returns an incomplete list as a complete result.
-The development Off setting does not change the planned five-minute product default.
-No dependent rounding rule was selected by this implementation.
+Personal settings default to five-minute rounding, 35 weekly hours, and the progress indicator.
+See [settings and rounding](settings.md) for the approved rules and migration behaviour.
 
 ## Local configuration
 
@@ -51,7 +52,7 @@ Use `Authorization: Bearer <development token>` for requests.
 Use a fresh UUID in `Idempotency-Key` for each new mutation. Keep that key for its retries.
 Read the ETag before a replacement or deletion. Send it unchanged in If-Match.
 Use the duration-only example in `api/examples.json` with a fresh entry ID.
-The initial server does not implement the settings or projects endpoints in the target contract.
+The server implements the settings endpoints. The projects endpoints remain unimplemented.
 The separate `sync-client/` library now uses this API. It checks the account before sending entries.
 The native app is not connected. Production identity remains unconfigured.
 
@@ -83,7 +84,7 @@ The implemented handlers then passed all three against Postgres.
 The concurrency and rollback tests passed on their first run. No defect was introduced to force a failure.
 A new strict-date test returned HTTP 200 instead of 422 before the date validation fix.
 
-Validation on October 26, 2026:
+Initial phase 2A validation on October 26, 2026:
 
 - Windows: six API integration tests passed against Postgres 17. Formatting, Clippy, and build passed.
 - Linux container: six API integration tests and build passed against Postgres 17.
@@ -94,4 +95,4 @@ Validation on October 26, 2026:
 
 The disposable validation database was removed after these checks. No development service was left running.
 
-Production authentication, deployment, rate limiting, client sync, and export jobs are outside this slice.
+Production authentication, deployment, rate limiting, scheduled sync, and export jobs remain unimplemented.

@@ -941,19 +941,21 @@
               5
             ],
             "default": 5,
-            "description": "Null disables rounding. More intervals remain an open decision."
+            "description": "Null preserves exact seconds. Five-minute rounding uses half-up ties. Changes apply only to new entries."
           },
           "weekly_target_hours": {
             "type": "number",
             "exclusiveMinimum": 0,
-            "default": 35
+            "default": 35,
+            "description": "The configurable base weekly target. Calendar adjustments are not implemented."
           },
           "visual_indicator": {
             "type": "string",
             "enum": [
               "glass",
               "progress"
-            ]
+            ],
+            "default": "progress"
           }
         },
         "required": [
@@ -976,19 +978,21 @@
               5
             ],
             "default": 5,
-            "description": "Null disables rounding. More intervals remain an open decision."
+            "description": "Null preserves exact seconds. Five-minute rounding uses half-up ties. Changes apply only to new entries."
           },
           "weekly_target_hours": {
             "type": "number",
             "exclusiveMinimum": 0,
-            "default": 35
+            "default": 35,
+            "description": "The configurable base weekly target. Calendar adjustments are not implemented."
           },
           "visual_indicator": {
             "type": "string",
             "enum": [
               "glass",
               "progress"
-            ]
+            ],
+            "default": "progress"
           },
           "version": {
             "type": "integer",

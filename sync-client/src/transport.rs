@@ -20,6 +20,31 @@ mod tests {
     use uuid::Uuid;
 
     #[test]
+    fn receipt_rounding_accepts_exact_and_rounded_totals_and_rejects_false_totals() {
+        for (original, interval, effective) in [
+            (781, Value::Null, 781),
+            (781, json!(5), 900),
+            (149, json!(5), 0),
+            (150, json!(5), 300),
+            (10800, json!(5), 10800),
+        ] {
+            let receipt =
+                json!({"rounding_interval_minutes":interval,"effective_seconds":effective});
+            assert_eq!(checked_rounding(&receipt, original).unwrap().0, effective);
+            let mut wrong = receipt;
+            wrong["effective_seconds"] = json!(effective + 1);
+            assert!(checked_rounding(&wrong, original).is_err());
+        }
+        for receipt in [
+            json!({"effective_seconds":781}),
+            json!({"rounding_interval_minutes":10,"effective_seconds":600}),
+            json!({"rounding_interval_minutes":5,"effective_seconds":-1}),
+        ] {
+            assert!(checked_rounding(&receipt, 781).is_err());
+        }
+    }
+
+    #[test]
     fn development_transport_rejects_remote_or_ambiguous_destinations() {
         for server in [
             "http://example.com:8788",
@@ -53,6 +78,8 @@ pub struct DevelopmentClient {
 pub struct RemoteEntry {
     pub entry: crate::DurationEntry,
     pub version: i64,
+    pub effective_seconds: u64,
+    pub rounding_interval_minutes: Option<u8>,
 }
 
 impl DevelopmentClient {
@@ -84,17 +111,22 @@ impl DevelopmentClient {
             .as_i64()
             .filter(|v| *v > 0)
             .ok_or(SyncError::InvalidReceipt)?;
+        let (effective_seconds, rounding_interval_minutes) =
+            checked_rounding(&value, entry.original_seconds)?;
         if entry.entry_id != entry_id
             || value["person_id"] != json!(self.scope.person_id)
             || value["kind"] != "duration"
             || value.get("project_id") != Some(&Value::Null)
-            || value.get("rounding_interval_minutes") != Some(&Value::Null)
-            || value["effective_seconds"] != entry.original_seconds
             || etag != format!("\"{version}\"")
         {
             return Err(SyncError::InvalidReceipt);
         }
-        Ok(RemoteEntry { entry, version })
+        Ok(RemoteEntry {
+            entry,
+            version,
+            effective_seconds,
+            rounding_interval_minutes,
+        })
     }
 
     pub fn new(scope: Scope, token: &str) -> Result<Self, SyncError> {
@@ -219,6 +251,7 @@ impl DevelopmentClient {
                 .limit(32768)
                 .read_json()
                 .map_err(|_| SyncError::InvalidReceipt)?;
+            checked_rounding(&receipt, entry.original_seconds)?;
             if body
                 .as_object()
                 .unwrap()
@@ -226,8 +259,6 @@ impl DevelopmentClient {
                 .any(|(key, value)| receipt.get(key) != Some(value))
                 || receipt["person_id"] != json!(self.scope.person_id)
                 || receipt["version"] != version
-                || receipt["effective_seconds"] != entry.original_seconds
-                || receipt.get("rounding_interval_minutes") != Some(&Value::Null)
                 || receipt["export_state"] != "not_exported"
                 || receipt["updated_at"]
                     .as_str()
@@ -243,6 +274,18 @@ impl DevelopmentClient {
         }
         Ok(confirmed)
     }
+}
+
+fn checked_rounding(receipt: &Value, original: u64) -> Result<(u64, Option<u8>), SyncError> {
+    let (effective, interval) = match receipt.get("rounding_interval_minutes") {
+        Some(Value::Null) => (original, None),
+        Some(value) if value.as_u64() == Some(5) => (((original + 150) / 300) * 300, Some(5)),
+        _ => return Err(SyncError::InvalidReceipt),
+    };
+    if receipt["effective_seconds"].as_u64() != Some(effective) {
+        return Err(SyncError::InvalidReceipt);
+    }
+    Ok((effective, interval))
 }
 
 fn check_status(status: u16, expected: u16) -> Result<(), SyncError> {
