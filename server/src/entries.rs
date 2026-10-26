@@ -35,22 +35,31 @@ fn entry_body(body: &[u8], create: bool) -> Result<(Option<Uuid>, Value), ApiErr
     } else {
         None
     };
-    let expected = [
-        "kind",
-        "entry_date",
-        "project_id",
-        "description",
-        "original_seconds",
-    ];
+    let mut expected = vec!["kind", "entry_date", "project_id", "description"];
+    let timed = match fields.get("kind").and_then(Value::as_str) {
+        Some("duration") => false,
+        Some("timed") => true,
+        _ => return Err(invalid()),
+    };
+    if timed {
+        expected.extend(["started_at", "stopped_at", "time_zone"]);
+    } else {
+        expected.push("original_seconds");
+    }
     if fields.len() != expected.len() || expected.iter().any(|k| !fields.contains_key(*k)) {
         return Err(invalid());
     }
-    if fields["kind"] != "duration" || !fields["project_id"].is_null() {
-        return Err(invalid());
+    if !fields["project_id"].is_null() {
+        let id = parse_id(fields["project_id"].as_str().ok_or_else(invalid)?)?;
+        fields.insert("project_id".into(), json!(id));
     }
     let date = fields["entry_date"].as_str().ok_or_else(invalid)?;
-    parse_date(date)?;
-    let seconds = fields["original_seconds"].as_i64().ok_or_else(invalid)?;
+    let date = parse_date(date)?;
+    let seconds = if timed {
+        crate::timed::seconds(&fields, date)?
+    } else {
+        fields["original_seconds"].as_i64().ok_or_else(invalid)?
+    };
     if !(1..=9_007_199_254_740_991).contains(&seconds) {
         return Err(invalid());
     }
@@ -63,6 +72,7 @@ fn entry_body(body: &[u8], create: bool) -> Result<(Option<Uuid>, Value), ApiErr
     {
         return Err(invalid());
     }
+    fields.insert("original_seconds".into(), json!(seconds));
     Ok((entry_id, Value::Object(fields)))
 }
 
@@ -193,6 +203,10 @@ async fn mutate(
         }
         version.checked_add(1).ok_or_else(|| internal(()))?
     };
+    if action != "delete" {
+        let previous = saved.as_ref().map(|row| row.get::<_, Value>(2));
+        crate::projects::check_entry(&tx, actor, body.as_ref().unwrap(), previous.as_ref()).await?;
+    }
     let interval = if action == "create" {
         crate::settings::current(&tx, actor).await?.1["rounding_interval_minutes"].clone()
     } else {

@@ -6,7 +6,9 @@ This is a development implementation of part of the target OpenAPI contract.
 
 ## Supported behaviour
 
-- Create, retrieve, replace, and delete completed duration-only entries.
+- Create, retrieve, replace, and delete completed timed and duration-only entries.
+- Derive elapsed seconds and validate the saved time zone for timed entries.
+- List assigned projects with account-bound cursors and check access before saving project time.
 - Read the authenticated tenant and person through `GET /v1/me` before sync.
 - List the caller's entries within an inclusive date range containing at most 100 results.
 - Preserve exact original seconds and calculate effective seconds with the entry's applied rounding interval.
@@ -17,8 +19,8 @@ This is a development implementation of part of the target OpenAPI contract.
 - Keep the entry change, operation receipt, and audit event in one transaction.
 - Retain deletion records and reject reuse of a deleted entry ID for the same person.
 
-Only unassigned entries with `project_id: null` are supported.
-Project access, timed entries, and cursor pagination remain later slices.
+Entries can be unassigned or belong to an active project assigned to the caller.
+See [timed entries and project access](timed-projects.md). Entry-list pagination remains unfinished.
 More than 100 matching entries returns a validation error. It never returns an incomplete list as a complete result.
 Personal settings default to five-minute rounding, 35 weekly hours, and the progress indicator.
 See [settings and rounding](settings.md) for the approved rules and migration behaviour.
@@ -52,7 +54,7 @@ Use `Authorization: Bearer <development token>` for requests.
 Use a fresh UUID in `Idempotency-Key` for each new mutation. Keep that key for its retries.
 Read the ETag before a replacement or deletion. Send it unchanged in If-Match.
 Use the duration-only example in `api/examples.json` with a fresh entry ID.
-The server implements the settings endpoints. The projects endpoints remain unimplemented.
+The server implements personal settings and project listing. Project administration remains a later task.
 The separate `sync-client/` library now uses this API. It checks the account before sending entries.
 The native app is not connected. Production identity remains unconfigured.
 

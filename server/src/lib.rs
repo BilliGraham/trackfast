@@ -1,6 +1,8 @@
 mod entries;
 mod operations;
+mod projects;
 mod settings;
+mod timed;
 
 use axum::{
     Json, Router,
@@ -19,6 +21,7 @@ use uuid::Uuid;
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_entries.sql"),
     include_str!("../migrations/002_settings.sql"),
+    include_str!("../migrations/003_projects.sql"),
 ];
 
 #[derive(Clone, Copy)]
@@ -149,7 +152,7 @@ fn invalid() -> ApiError {
     ApiError(
         StatusCode::UNPROCESSABLE_ENTITY,
         "validation_failed",
-        "Check the entry fields. This slice accepts unassigned duration entries only.",
+        "Check the entry fields, time zone, and project access.",
     )
 }
 fn missing() -> ApiError {
@@ -213,6 +216,7 @@ async fn identity(
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/v1/me", get(identity))
+        .route("/v1/projects", get(projects::list))
         .route(
             "/v1/me/settings",
             get(settings::read).put(settings::replace),

@@ -7,7 +7,7 @@ The target product has a shared API and a polished native reference client.
 Phase 1 defines [the API contract](docs/api-contract.md) and [delivery roadmap](docs/roadmap.md).
 The app remains local while the API develops. Internal teams can later build other clients against the same API.
 The GitHub repository is BilliGraham/trackfast. The user selected public visibility.
-The separate [development API](docs/server.md) now stores duration-only entries in Postgres.
+The separate [development API](docs/server.md) stores completed timed and duration-only entries in Postgres.
 It uses local development credentials. The desktop app is not connected to it.
 Phase 3 starts with a separate [durable operation queue](docs/sync-client.md).
 The queue can create, edit, and delete duration entries through the local development API.
@@ -15,6 +15,7 @@ It checks account identity and responses, preserves retry keys, and retains conf
 The desktop app still uses its existing local database.
 The API now has [personal settings](docs/settings.md) for rounding, the weekly target, and the visual indicator.
 Defaults are five-minute rounding, 35 hours per week, and the progress indicator. The native settings interface is not connected yet.
+The API also has [saved time zones and project access checks](docs/timed-projects.md), with private, paginated project lists.
 
 ## Current scope
 

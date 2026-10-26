@@ -2,7 +2,7 @@
 
 The separate `sync-client/` Rust library provides a durable queue and a loopback HTTP adapter.
 It supports unassigned duration entries. Original seconds remain exact, and response checks support rounding Off or five-minute rounding.
-The native app is not connected. Timed entries and projects require further API work.
+The native app is not connected. Timed entries and project access now work in the API, but this queue still supports unassigned durations only.
 Personal settings now work in the API. The client does not queue settings changes yet.
 
 ## Storage rules
@@ -78,7 +78,7 @@ macOS and visual checks did not run. The interface did not change.
 
 ## Remaining work
 
-1. Complete timed entries, projects, list pagination, and the remaining shared entry rules in the API.
+1. Add timed-entry and project support to the queue, then complete entry-list pagination and remote change retrieval.
 2. Select and configure production identity. Google Workspace availability is unconfirmed.
 3. Add scheduled retries, remote change retrieval, and the remaining conflict choices.
 4. Connect the native database worker and interface after the required API operations work.

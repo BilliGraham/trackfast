@@ -25,6 +25,8 @@ The interface can accept hours and minutes, then convert them to seconds.
 
 A duration-only entry has a selected date and original duration. It has no clock endpoints.
 A timed entry has start and stop timestamps with explicit UTC offsets.
+It also requires an IANA `time_zone` saved with the entry. Endpoint offsets must match that zone at each instant.
+The API accepts whole-second instants and rejects fractional instants and unknown offsets.
 The server derives its original duration from those endpoints. The stop must be later than the start.
 Phase 1 describes completed entries. Running-timer commands remain a later contract extension.
 The three-row widget limit does not limit the number of stored entries.
@@ -89,9 +91,12 @@ Validate token signature, issuer, audience, and expiry. Derive tenant and person
 Do not trust a caller-supplied person ID, company domain, or role.
 Return 404 for an entry outside the caller's scope. Do not disclose whether another person owns that ID.
 Reject projects outside the caller's access and new time on archived projects with 422.
+Existing members can correct notes on archived entries but cannot change their recorded work on that archived project.
+Project pagination uses 15-minute cursors bound to tenant, person, and page size. Every page checks current membership.
+See [timed entries and projects](timed-projects.md) for the implemented rules and development provisioning limits.
 Date bounds are inclusive. Start must not exceed end.
 List responses contain an opaque next cursor or null. Bind cursors to identity and filters.
-The API must impose bounded page sizes. Cursor expiry and snapshot consistency need a sync design before phase 3.
+The API must impose bounded page sizes. Project lists are live paginated results. Entry-list cursors and remote change retrieval remain unfinished.
 
 ## Proposed mutation and retry rules
 

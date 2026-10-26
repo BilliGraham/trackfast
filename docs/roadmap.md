@@ -17,7 +17,7 @@ Keep production integration credentials on the server. Keep local work when the 
 | 4 | Xero exports, entry states, restricted PM weekly totals, and donut charts. |
 | 5 | A small pilot with checked totals, actionable failures, and gradual user expansion. |
 
-Phase 1 supplied the draft contract. Phase 2A now has a local development API for exact duration-only entries.
+Phase 1 supplied the draft contract. Phase 2A now has a local development API for completed timed and duration-only entries.
 See server.md for supported operations, authentication limits, and Postgres checks.
 At the user's request, phase 3 now has a separate durable queue and local HTTP transport in `sync-client/`.
 Create, edit, and delete retries preserve their keys across queue restarts. Conflicts retain local work.
@@ -27,7 +27,8 @@ Review the open decisions in api-contract.md before implementing dependent behav
 The user approved half-interval ties rounding up, visible zero totals without export, and setting changes for new entries only.
 Personal settings and duration rounding now work in the API. New accounts default to five minutes, 35 weekly hours, and the progress indicator.
 Existing entries retain their applied rounding interval. The native settings screen is not connected yet.
-Timed entries will use their start date in the selected time zone. Timed-entry API support remains unfinished.
+Timed entries now use their start date in a saved time zone. Project membership checks and project pagination now work in the API.
+Project administration, entry-list pagination, and the matching client workflows remain unfinished.
 Calendar-based holiday and leave adjustments are later work. Keep the configurable base target separate from calculated weekly adjustments.
 Google Workspace availability is unconfirmed. Select and configure the production identity provider before shared access.
 Start phase 2A with duration-only entry creation, retrieval, replacement, and deletion.

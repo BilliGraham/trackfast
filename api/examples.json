@@ -21,7 +21,8 @@
       "project_id": "00000000-0000-4000-8000-000000000002",
       "description": "Development",
       "started_at": "2026-10-26T09:03:00+02:00",
-      "stopped_at": "2026-10-26T09:16:00+02:00"
+      "stopped_at": "2026-10-26T09:16:00+02:00",
+      "time_zone": "Africa/Johannesburg"
     }
   },
   {
@@ -52,7 +53,8 @@
       "effective_seconds": 900,
       "rounding_interval_minutes": 5,
       "export_state": "not_exported",
-      "updated_at": "2026-10-26T07:16:01Z"
+      "updated_at": "2026-10-26T07:16:01Z",
+      "time_zone": "Africa/Johannesburg"
     }
   },
   {
@@ -72,7 +74,8 @@
       "effective_seconds": 780,
       "rounding_interval_minutes": null,
       "export_state": "not_exported",
-      "updated_at": "2026-10-26T07:16:01Z"
+      "updated_at": "2026-10-26T07:16:01Z",
+      "time_zone": "Africa/Johannesburg"
     }
   },
   {
@@ -128,7 +131,8 @@
           "effective_seconds": 900,
           "rounding_interval_minutes": 5,
           "export_state": "not_exported",
-          "updated_at": "2026-10-26T07:16:01Z"
+          "updated_at": "2026-10-26T07:16:01Z",
+          "time_zone": "Africa/Johannesburg"
         }
       ],
       "next_cursor": null

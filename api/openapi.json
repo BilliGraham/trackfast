@@ -41,6 +41,9 @@
                 }
               }
             }
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
           }
         },
         "parameters": [
@@ -50,7 +53,8 @@
           {
             "$ref": "#/components/parameters/Limit"
           }
-        ]
+        ],
+        "description": "List current project memberships, including archived projects. Cursors expire after 15 minutes and bind to tenant, person, and page size. Repeat the same limit. Each page rechecks membership. This is a live list, not a snapshot."
       }
     },
     "/v1/me/entries": {
@@ -148,7 +152,8 @@
                   "effective_seconds": 900,
                   "rounding_interval_minutes": 5,
                   "export_state": "not_exported",
-                  "updated_at": "2026-10-26T07:16:01Z"
+                  "updated_at": "2026-10-26T07:16:01Z",
+                  "time_zone": "Africa/Johannesburg"
                 }
               }
             },
@@ -200,7 +205,8 @@
                     "project_id": "00000000-0000-4000-8000-000000000002",
                     "description": "Development",
                     "started_at": "2026-10-26T09:03:00+02:00",
-                    "stopped_at": "2026-10-26T09:16:00+02:00"
+                    "stopped_at": "2026-10-26T09:16:00+02:00",
+                    "time_zone": "Africa/Johannesburg"
                   }
                 }
               }
@@ -603,6 +609,12 @@
           "stopped_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "time_zone": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "IANA time zone saved with this entry. Timestamp offsets must match this zone."
           }
         },
         "required": [
@@ -612,9 +624,10 @@
           "description",
           "kind",
           "started_at",
-          "stopped_at"
+          "stopped_at",
+          "time_zone"
         ],
-        "description": "The server checks stop > start and derives original seconds. The entry keeps its start date in the selected time zone."
+        "description": "The API derives whole elapsed seconds. Entry date must equal the start date in time_zone. Sub-second endpoints and unknown offsets are rejected."
       },
       "EntryCreate": {
         "oneOf": [
@@ -700,6 +713,12 @@
           "stopped_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "time_zone": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "IANA time zone saved with this entry. Timestamp offsets must match this zone."
           }
         },
         "required": [
@@ -708,9 +727,10 @@
           "description",
           "kind",
           "started_at",
-          "stopped_at"
+          "stopped_at",
+          "time_zone"
         ],
-        "description": "The server checks stop > start and derives original seconds. The entry keeps its start date in the selected time zone."
+        "description": "The API derives whole elapsed seconds. Entry date must equal the start date in time_zone. Sub-second endpoints and unknown offsets are rejected."
       },
       "EntryWrite": {
         "oneOf": [
@@ -880,6 +900,12 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "time_zone": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "IANA time zone saved with this entry. Timestamp offsets must match this zone."
           }
         },
         "required": [
@@ -896,9 +922,10 @@
           "effective_seconds",
           "rounding_interval_minutes",
           "export_state",
-          "updated_at"
+          "updated_at",
+          "time_zone"
         ],
-        "description": "The server checks stop > start and derives original seconds. The entry keeps its start date in the selected time zone."
+        "description": "The API derives whole elapsed seconds. Entry date must equal the start date in time_zone. Sub-second endpoints and unknown offsets are rejected."
       },
       "EntryResponse": {
         "oneOf": [

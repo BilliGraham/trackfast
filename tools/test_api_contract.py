@@ -84,6 +84,13 @@ class ApiContract(unittest.TestCase):
         del value['stopped_at']
         self.assertFalse(self.validator('EntryCreate').is_valid(value))
 
+    def test_timed_entries_require_a_saved_time_zone(self):
+        value = copy.deepcopy(next(c['value'] for c in self.cases if c['name'] == 'timed_create'))
+        value['time_zone'] = 'Africa/Johannesburg'
+        self.validator('EntryCreate').validate(value)
+        del value['time_zone']
+        self.assertFalse(self.validator('EntryCreate').is_valid(value))
+
     def test_both_rounding_modes_are_supported(self):
         for interval in (None, 5):
             settings = {'rounding_interval_minutes': interval, 'weekly_target_hours': 35,

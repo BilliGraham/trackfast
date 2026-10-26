@@ -25,7 +25,7 @@ async fn migration_keeps_legacy_exact_entries_while_new_entries_use_defaults() {
     tokio::spawn(async move {
         connection.await.unwrap();
     });
-    client.batch_execute("DROP TABLE api_settings_audit; DROP TABLE api_settings; DELETE FROM api_migrations WHERE version=2;").await.unwrap();
+    client.batch_execute("DROP TABLE api_project_cursors; DROP TABLE api_project_members; DROP TABLE api_projects; DROP TABLE api_settings_audit; DROP TABLE api_settings; DELETE FROM api_migrations WHERE version>=2;").await.unwrap();
     client.execute("INSERT INTO api_entries(tenant_id,person_id,entry_id,version,data) VALUES ($1,$2,$3,1,$4)", &[&tenant,&person,&id,&legacy]).await.unwrap();
     f.state.migrate().await.unwrap();
     f.state.migrate().await.unwrap();

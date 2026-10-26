@@ -9,8 +9,12 @@ use tower::ServiceExt;
 use trackfast_api::{AppState, router};
 use uuid::Uuid;
 
+#[path = "cases/projects.rs"]
+mod projects;
 #[path = "cases/settings.rs"]
 mod settings;
+#[path = "cases/timed.rs"]
+mod timed;
 
 struct Fixture {
     app: Router,
