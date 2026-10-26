@@ -19,6 +19,9 @@ Keep production integration credentials on the server. Keep local work when the 
 
 Phase 1 supplied the draft contract. Phase 2A now has a local development API for exact duration-only entries.
 See server.md for supported operations, authentication limits, and Postgres checks.
+At the user's request, phase 3 now starts with the separate durable queue in `sync-client/`.
+See sync-client.md for its scope and the remaining connection work.
+Phase 2 API and app prerequisites remain incomplete. The queue does not connect the daily-use app yet.
 Review the open decisions in api-contract.md before implementing dependent behaviour.
 Start phase 2A with duration-only entry creation, retrieval, replacement, and deletion.
 Do not connect the native app to HTTP during phase 1 or phase 2.

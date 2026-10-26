@@ -61,6 +61,8 @@ Use an in-memory database in tests. Do not call the real Toggl API from tests.
 For server tests, use a disposable Postgres database through `TRACKFAST_TEST_DATABASE_URL`.
 Each server test uses a separate generated schema. Never point these tests at a production database.
 Run server formatting, Clippy, tests, and build with `--manifest-path server/Cargo.toml` and `--locked` where applicable.
+Run the same checks for the queue with `--manifest-path sync-client/Cargo.toml`.
+Queue tests must use in-memory SQLite or generated temporary files. Never open the native app database from these tests.
 Examine interface changes at narrow and normal window sizes.
 Examine both themes when the app supports both themes.
 Keep review captures and recordings outside the repository.

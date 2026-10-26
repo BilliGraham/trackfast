@@ -9,6 +9,8 @@ The app remains local while the API develops. Internal teams can later build oth
 The GitHub repository is BilliGraham/trackfast. The user selected public visibility.
 The separate [development API](docs/server.md) now stores duration-only entries in Postgres.
 It uses local development credentials. The desktop app is not connected to it.
+Phase 3 starts with a separate [durable operation queue](docs/sync-client.md).
+The queue has no HTTP transport yet. The desktop app still uses its existing local database.
 
 ## Current scope
 

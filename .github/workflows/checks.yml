@@ -3,6 +3,24 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  sync-client:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+      - name: Check queue formatting
+        run: cargo fmt --manifest-path sync-client/Cargo.toml --all --check
+      - name: Check queue lints
+        run: cargo clippy --manifest-path sync-client/Cargo.toml --locked --all-targets -- -D warnings
+      - name: Test queue
+        run: cargo test --manifest-path sync-client/Cargo.toml --locked --all-targets
+      - name: Build queue
+        run: cargo build --manifest-path sync-client/Cargo.toml --locked
   api-server:
     runs-on: ubuntu-latest
     services:

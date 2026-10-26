@@ -1,5 +1,6 @@
 /target/
 /server/target/
+/sync-client/target/
 /.local/
 .env
 .env.*

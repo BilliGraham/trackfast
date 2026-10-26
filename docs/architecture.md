@@ -3,6 +3,7 @@
 This document describes the current local app.
 See [the roadmap](roadmap.md) and [API contract](api-contract.md) for the target architecture.
 Phase 1 does not change the runtime or database schema described here.
+The separate phase 3 queue also leaves this runtime unchanged. See [the queue design](sync-client.md).
 
 | Module | Responsibility |
 | --- | --- |
