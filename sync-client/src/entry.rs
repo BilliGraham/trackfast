@@ -32,6 +32,9 @@ impl Entry {
     pub(crate) fn request(&self) -> Value {
         let mut value = json!({"entry_id":self.entry_id,"entry_date":self.entry_date,
             "project_id":self.project_id,"description":self.description});
+        if let Some(snapshot) = &self.recorded_settings {
+            value["recorded_settings"] = json!(snapshot);
+        }
         if let Some(timing) = &self.timing {
             value["kind"] = json!("timed");
             value["started_at"] = json!(timing.started_at);

@@ -23,6 +23,17 @@ mod tests {
     use uuid::Uuid;
 
     #[test]
+    fn receipts_cannot_change_or_omit_recorded_rounding() {
+        for receipt in [
+            json!({"rounding_interval_minutes":5,"effective_seconds":900,"recorded_settings":{"rounding_interval_minutes":null}}),
+            json!({"rounding_interval_minutes":5,"effective_seconds":900,"recorded_settings":null}),
+            json!({"rounding_interval_minutes":5,"effective_seconds":900,"recorded_settings":{}}),
+        ] {
+            assert!(checked_rounding(&receipt, 781).is_err());
+        }
+    }
+
+    #[test]
     fn a_missing_update_requires_conflict_review_not_an_assumed_deletion() {
         assert!(mutation_conflict(404, "replace"));
         assert!(mutation_conflict(404, "delete"));
@@ -277,6 +288,7 @@ impl DevelopmentClient {
                 "replace" => {
                     let mut update = body.clone();
                     update.as_object_mut().unwrap().remove("entry_id");
+                    update.as_object_mut().unwrap().remove("recorded_settings");
                     self.agent
                         .put(&resource)
                         .header("authorization", &self.authorization)
@@ -328,6 +340,11 @@ impl DevelopmentClient {
                 .read_json()
                 .map_err(|_| SyncError::InvalidReceipt)?;
             checked_rounding(&receipt, entry.original_seconds)?;
+            if let Some(snapshot) = &entry.recorded_settings
+                && receipt["rounding_interval_minutes"] != json!(snapshot.rounding_interval_minutes)
+            {
+                return Err(SyncError::InvalidReceipt);
+            }
             if crate::Entry::from_response(&receipt).map_err(|_| SyncError::InvalidReceipt)?
                 != *entry
             {
@@ -358,6 +375,14 @@ impl DevelopmentClient {
 }
 
 fn checked_rounding(receipt: &Value, original: u64) -> Result<(u64, Option<u8>), SyncError> {
+    if let Some(snapshot) = receipt.get("recorded_settings") {
+        let fields = snapshot.as_object().ok_or(SyncError::InvalidReceipt)?;
+        if fields.len() != 1
+            || fields.get("rounding_interval_minutes") != receipt.get("rounding_interval_minutes")
+        {
+            return Err(SyncError::InvalidReceipt);
+        }
+    }
     let (effective, interval) = match receipt.get("rounding_interval_minutes") {
         Some(Value::Null) => (original, None),
         Some(value) if value.as_u64() == Some(5) => (((original + 150) / 300) * 300, Some(5)),

@@ -50,6 +50,7 @@ mod tests {
     fn pending_work_schedules_another_bounded_cycle() {
         let mut q = queue();
         q.enqueue(&crate::Entry {
+            recorded_settings: None,
             entry_id: uuid::Uuid::new_v4(),
             entry_date: "2026-10-27".parse().unwrap(),
             description: "Pending work".into(),

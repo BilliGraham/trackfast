@@ -48,7 +48,9 @@ Aggregate effective durations without another rounding pass.
 
 The entry response includes its applied interval, original duration, and effective duration.
 The server calculates effective duration. Clients cannot supply an authoritative effective duration.
-The current API uses the person's server setting at first successful creation. Offline recording-time snapshots require a decision before the native app connects.
+A create request can include `recorded_settings.rounding_interval_minutes`, with null for Off or 5 for five-minute rounding.
+Clients capture this choice when recording starts or a manual entry is created. The server calculates the effective duration from that choice.
+Requests that omit `recorded_settings` retain the existing server-setting behavior. Replacement requests cannot change the captured choice.
 Setting changes apply only to new entries. Existing entries keep their applied rounding interval.
 
 Personal settings contain separate rounding, visual indicator, and weekly target fields.
@@ -68,7 +70,7 @@ The user approved these rules on October 26, 2026:
 - Entries whose rounded duration is zero remain visible but are not exported.
 - Setting changes apply only to new entries. Existing, exported, and invoiced entries retain their applied setting.
 
-Offline setting snapshots and Xero sub-minute remainders still require decisions.
+The user approved recording-time rounding snapshots on October 27, 2026. Xero sub-minute remainders still require a decision.
 
 ## Initial operations
 

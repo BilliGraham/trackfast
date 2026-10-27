@@ -26,6 +26,9 @@ async fn bounded_delivery_and_reviewed_conflicts_work_over_http() {
         let mut local = Queue::open(&paths[1], &scope).unwrap();
         let client = DevelopmentClient::new(scope, &token).unwrap();
         let mut entry = Entry {
+            recorded_settings: Some(trackfast_sync::RecordedSettings {
+                rounding_interval_minutes: None,
+            }),
             entry_id: Uuid::new_v4(),
             entry_date: "2026-10-26".parse().unwrap(),
             description: "Original".into(),

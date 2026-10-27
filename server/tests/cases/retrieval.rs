@@ -219,6 +219,7 @@ async fn timed_project_queue_recovers_and_retrieves_remote_changes_over_http() {
             project
         );
         let mut entry = Entry {
+            recorded_settings: None,
             entry_id: Uuid::new_v4(),
             entry_date: "2026-10-26".parse().unwrap(),
             description: "Timed recovery".into(),

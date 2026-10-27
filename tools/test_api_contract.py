@@ -49,6 +49,19 @@ class ApiContract(unittest.TestCase):
     def duration(self):
         return copy.deepcopy(next(c['value'] for c in self.cases if c['name'] == 'duration_create'))
 
+    def test_recorded_settings_are_optional_on_create_and_not_mutable(self):
+        for name in ('duration_create', 'timed_create'):
+            value = copy.deepcopy(next(c['value'] for c in self.cases if c['name'] == name))
+            for interval in (None, 5):
+                value['recorded_settings'] = {'rounding_interval_minutes': interval}
+                self.validator('EntryCreate').validate(value)
+                replacement = {k: v for k, v in value.items() if k != 'entry_id'}
+                self.assertFalse(self.validator('EntryWrite').is_valid(replacement))
+            for snapshot in (None, {}, {'rounding_interval_minutes': 10},
+                             {'rounding_interval_minutes': 5, 'effective_seconds': 900}):
+                value['recorded_settings'] = snapshot
+                self.assertFalse(self.validator('EntryCreate').is_valid(value))
+
     def test_google_session_contract_rejects_client_assigned_roles(self):
         for path in ['/v1/auth/google/challenge', '/v1/auth/google/exchange',
                      '/v1/auth/refresh', '/v1/auth/logout']:

@@ -52,13 +52,13 @@ Zero effective durations remain visible in entry retrieval and lists.
 They must not be exported when the export worker is implemented. This API does not send Xero exports.
 Add effective durations directly for totals. Do not round the total again.
 
-A new entry uses the server setting at its first successful creation.
+A new entry uses its captured rounding choice when supplied. Otherwise, it uses the server setting at first successful creation.
 Its response records the applied interval. A retry returns that original result after a settings change.
 Changing settings does not update existing entries.
 Editing an entry recalculates its effective duration with its original applied interval.
 Entries from the earlier exact-only API retain rounding Off after migration.
 
-Offline recording-time settings snapshots are not implemented. They require a separate contract decision before the native app connects.
+The user approved recording-time snapshots on October 27, 2026. The API and queue now preserve them.
 The development client accepts and checks both exact and rounded API responses.
 Remote reads expose the original duration, effective duration, and applied interval.
 
@@ -86,3 +86,26 @@ Validation on October 26, 2026:
 - Windows: all 51 native-app tests, the native build, and all 21 Python checks passed.
 - Linux checks used a disposable Rust 1.98 container and Postgres 17.
 - macOS and visual checks did not run. The native interface did not change.
+
+## Offline recording settings
+
+Create requests can include `recorded_settings` with `rounding_interval_minutes` set to null or 5.
+Capture the setting when a timer starts or a manual entry is created. Later setting changes do not alter queued work.
+The API calculates effective seconds and returns the snapshot with the entry. It preserves the snapshot on edits and idempotent retries.
+A replacement cannot supply a new snapshot. Requests without a snapshot retain the server setting at first successful creation.
+The native app already captures local rounding. Its API connection remains a separate implementation step.
+
+TDD checks failed before this change for the create contract, saved queue settings, immutable edits, conflict choices, and receipt validation.
+Tests cover timed and duration entries, exact and rounded totals, setting changes, idempotent replay, queue restart, and copy recovery.
+On October 27, 2026, 48 library tests and one example test passed for the sync client on Windows and Linux.
+All 35 API tests passed on both platforms. Formatting and Clippy passed for both crates on both platforms.
+Both crates built on Windows and Linux. The Windows API build used a separate directory because the local pilot executable was running.
+All 67 native-app tests and 15 contract tests passed on Windows. macOS and visual checks did not run.
+
+## First native connection
+
+The user chose to leave existing local history unsynced at the first connection.
+The connection must save that boundary once. It must not reset the boundary after a network failure or restart.
+New entries recorded after that boundary remain queued until the API confirms them, including work recorded during offline days.
+This boundary concerns existing local records, not the date selected for a newly created manual entry.
+The native connection is not enabled by this contract change.

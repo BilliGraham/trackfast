@@ -510,6 +510,7 @@ fn renewal_during_queue_delivery_keeps_the_original_operation_key() {
     let identity = json!({"tenant_id":scope.tenant_id,"person_id":scope.person_id}).to_string();
     let tokens=json!({"access_token":"a".repeat(64),"refresh_token":"b".repeat(64),"token_type":"Bearer","expires_in":900}).to_string();
     let entry = crate::Entry {
+        recorded_settings: None,
         entry_id: Uuid::new_v4(),
         entry_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 27).unwrap(),
         description: "Test work".into(),

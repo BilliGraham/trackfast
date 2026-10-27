@@ -105,6 +105,7 @@ fn scope() -> Scope {
 
 fn entry() -> DurationEntry {
     DurationEntry {
+        recorded_settings: None,
         project_id: None,
         timing: None,
         entry_id: Uuid::new_v4(),

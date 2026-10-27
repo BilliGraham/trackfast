@@ -123,6 +123,15 @@ impl Queue {
             if remote.version != remote_version || remote.entry.is_none() {
                 return Err(Error::ConflictChanged);
             }
+            let body: String = tx
+                .query_row("SELECT body FROM entries WHERE entry_id=?1", [&id], |r| {
+                    r.get(0)
+                })
+                .map_err(storage)?;
+            let local: Entry = serde_json::from_str(&body).map_err(storage)?;
+            if local.recorded_settings != remote.entry.unwrap().recorded_settings {
+                return Err(Error::ConflictChanged);
+            }
         } else if action == "create" {
             return Err(Error::ConflictChanged);
         }

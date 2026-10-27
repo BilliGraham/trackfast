@@ -84,7 +84,7 @@ macOS and visual checks did not run. The interface did not change.
 ## Remaining work
 
 1. Add the native sign-in interface after agreement on the app connection scope. The live Rust session check passed on Windows.
-2. Agree on offline recording-time setting snapshots before connecting the native database worker and interface.
+2. Connect the native worker with captured rounding and an explicit first-connection boundary. Only work recorded after that boundary enters sync.
 3. Add Xero exports and restricted PM reports before the pilot.
 
 The approved rounding and date policies are recorded in `api-contract.md`.
@@ -112,3 +112,11 @@ See [retrieval and project administration](retrieval-admin.md) for the endpoint 
 It wraps the existing loopback transport and keeps all queue receipt checks.
 See [client sessions](client-sessions.md) for its public methods, platform requirements, and failure recovery.
 The original `DevelopmentClient` still accepts an in-memory token for development tests.
+
+## Recorded settings
+
+`Entry::recorded_settings` optionally captures Off or five-minute rounding for creation.
+The queue preserves this value in its existing JSON body. Older queued entries retain their original request content.
+The transport sends the snapshot on creation and checks the applied interval in the receipt. Edits cannot change the snapshot.
+If conflicting copies have different snapshots, accept the remote copy or preserve local work as a new entry.
+The first native connection will leave older local history on this computer. New offline work will remain queued until confirmed.

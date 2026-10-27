@@ -1033,6 +1033,9 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 9007199254740991
+          },
+          "recorded_settings": {
+            "$ref": "#/components/schemas/RecordedSettings"
           }
         },
         "required": [
@@ -1084,6 +1087,9 @@
             "minLength": 1,
             "maxLength": 100,
             "description": "IANA time zone saved with this entry. Timestamp offsets must match this zone."
+          },
+          "recorded_settings": {
+            "$ref": "#/components/schemas/RecordedSettings"
           }
         },
         "required": [
@@ -1281,6 +1287,9 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "recorded_settings": {
+            "$ref": "#/components/schemas/RecordedSettings"
           }
         },
         "required": [
@@ -1375,6 +1384,9 @@
             "minLength": 1,
             "maxLength": 100,
             "description": "IANA time zone saved with this entry. Timestamp offsets must match this zone."
+          },
+          "recorded_settings": {
+            "$ref": "#/components/schemas/RecordedSettings"
           }
         },
         "required": [
@@ -1933,6 +1945,26 @@
             "maximum": 900
           }
         }
+      },
+      "RecordedSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "rounding_interval_minutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "enum": [
+              null,
+              5
+            ]
+          }
+        },
+        "required": [
+          "rounding_interval_minutes"
+        ],
+        "description": "Rounding captured when recording starts or a manual entry is created. Null keeps exact seconds."
       }
     },
     "parameters": {
@@ -2125,7 +2157,6 @@
     "existing_entry_recalculation",
     "subminute_xero_export",
     "timed_entry_date_assignment",
-    "offline_setting_snapshot",
     "audit_readers"
   ]
 }

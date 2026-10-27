@@ -35,6 +35,8 @@ Timed entries now use their start date in a saved time zone. Project membership 
 The queue now supports timed entries and project assignments. Entry-list pagination, ordered remote changes, and project administration now work.
 The queue retains remote conflicts and checkpoints across restarts. See retrieval-admin.md.
 Scheduled retries and explicit conflict choices now exist in the separate sync client. See [sync recovery](sync-recovery.md).
+The API and queue now preserve an optional recording-time rounding choice across offline delivery.
+The first native connection will sync new work only. Existing history will remain local. New offline work will remain queued until confirmed.
 Shared deployment and native connection work remain unfinished.
 Calendar-based holiday and leave adjustments are later work. Keep the configurable base target separate from calculated weekly adjustments.
 The pilot will use Google sign-in with an explicit approved-user list. Google will not host Trackfast data.

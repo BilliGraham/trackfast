@@ -29,6 +29,8 @@ pub struct Scope {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recorded_settings: Option<RecordedSettings>,
     #[serde(default)]
     pub project_id: Option<Uuid>,
     #[serde(default)]
@@ -37,6 +39,12 @@ pub struct Entry {
     pub entry_date: NaiveDate,
     pub description: String,
     pub original_seconds: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecordedSettings {
+    pub rounding_interval_minutes: Option<u8>,
 }
 
 /// Compatibility name for callers that already use duration entries.
@@ -149,6 +157,15 @@ impl Queue {
             .filter(|v| *v > 0 && *v < i64::MAX)
             .ok_or(Error::UnknownEntry)?;
         if let Some(entry) = replacement {
+            let previous: String = tx
+                .query_row("SELECT body FROM entries WHERE entry_id=?1", [&id], |r| {
+                    r.get(0)
+                })
+                .map_err(storage)?;
+            let previous: Entry = serde_json::from_str(&previous).map_err(storage)?;
+            if previous.recorded_settings != entry.recorded_settings {
+                return Err(Error::InvalidEntry);
+            }
             tx.execute(
                 "UPDATE entries SET body=?2 WHERE entry_id=?1",
                 params![id, serde_json::to_string(entry).map_err(storage)?],
@@ -341,6 +358,13 @@ impl Queue {
 }
 
 fn validate(entry: &DurationEntry) -> Result<(), Error> {
+    if entry
+        .recorded_settings
+        .as_ref()
+        .is_some_and(|s| !matches!(s.rounding_interval_minutes, None | Some(5)))
+    {
+        return Err(Error::InvalidEntry);
+    }
     if let Some(timing) = &entry.timing {
         timing.validate(entry)?;
     }

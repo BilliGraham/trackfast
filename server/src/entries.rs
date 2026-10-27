@@ -36,6 +36,17 @@ fn entry_body(body: &[u8], create: bool) -> Result<(Option<Uuid>, Value), ApiErr
         None
     };
     let mut expected = vec!["kind", "entry_date", "project_id", "description"];
+    if create && let Some(snapshot) = fields.get("recorded_settings") {
+        let snapshot = snapshot.as_object().ok_or_else(invalid)?;
+        if snapshot.len() != 1
+            || !snapshot
+                .get("rounding_interval_minutes")
+                .is_some_and(|v| v.is_null() || v.as_u64() == Some(5))
+        {
+            return Err(invalid());
+        }
+        expected.push("recorded_settings");
+    }
     let timed = match fields.get("kind").and_then(Value::as_str) {
         Some("duration") => false,
         Some("timed") => true,
@@ -209,11 +220,24 @@ async fn mutate(
         crate::projects::check_entry(&tx, actor, body.as_ref().unwrap(), previous.as_ref()).await?;
     }
     let interval = if action == "create" {
-        crate::settings::current(&tx, actor).await?.1["rounding_interval_minutes"].clone()
+        if let Some(snapshot) = body.as_ref().and_then(|b| b.get("recorded_settings")) {
+            snapshot["rounding_interval_minutes"].clone()
+        } else {
+            crate::settings::current(&tx, actor).await?.1["rounding_interval_minutes"].clone()
+        }
     } else {
         saved.as_ref().unwrap().get::<_, Value>(2)["rounding_interval_minutes"].clone()
     };
     let mut data = body.unwrap_or_else(|| saved.as_ref().unwrap().get(2));
+    if action == "replace"
+        && let Some(snapshot) = saved
+            .as_ref()
+            .unwrap()
+            .get::<_, Value>(2)
+            .get("recorded_settings")
+    {
+        data["recorded_settings"] = snapshot.clone();
+    }
     data["entry_id"] = json!(id);
     data["person_id"] = json!(actor.person);
     data["version"] = json!(version);

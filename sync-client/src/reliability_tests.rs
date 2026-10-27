@@ -14,6 +14,7 @@ fn queue() -> Queue {
 }
 fn entry() -> Entry {
     Entry {
+        recorded_settings: None,
         entry_id: Uuid::new_v4(),
         entry_date: NaiveDate::from_ymd_opt(2026, 10, 27).unwrap(),
         description: "Local work".into(),
@@ -21,6 +22,61 @@ fn entry() -> Entry {
         project_id: None,
         timing: None,
     }
+}
+
+#[test]
+fn edits_and_local_conflict_choices_cannot_change_recorded_settings() {
+    let mut q = queue();
+    let mut local = entry();
+    local.recorded_settings = Some(RecordedSettings {
+        rounding_interval_minutes: None,
+    });
+    let key = q.enqueue(&local).unwrap();
+    q.confirm(key).unwrap();
+    let mut changed = local.clone();
+    changed
+        .recorded_settings
+        .as_mut()
+        .unwrap()
+        .rounding_interval_minutes = Some(5);
+    assert!(q.replace(&changed).is_err());
+    assert_eq!(q.entry(local.entry_id).unwrap(), Some(local.clone()));
+    let key = q.replace(&local).unwrap();
+    conflict(&mut q, &local, 2, Some(changed));
+    assert!(q.resolve_with_local(key, 2).is_err());
+    assert_eq!(
+        q.resolve_as_new(key, 2).unwrap().recorded_settings,
+        local.recorded_settings
+    );
+}
+
+#[test]
+fn recorded_settings_survive_queue_restart_and_copy_recovery() {
+    let path = std::env::temp_dir().join(format!("recorded-{}.db", Uuid::new_v4()));
+    let scope = queue().scope.clone();
+    let mut q = Queue::open(&path, &scope).unwrap();
+    let mut local = entry();
+    local.recorded_settings = Some(RecordedSettings {
+        rounding_interval_minutes: None,
+    });
+    let key = q.enqueue(&local).unwrap();
+    drop(q);
+    let mut q = Queue::open(&path, &scope).unwrap();
+    assert_eq!(q.pending().unwrap()[0].operation_id, key);
+    assert_eq!(
+        q.pending().unwrap()[0].entry.recorded_settings,
+        local.recorded_settings
+    );
+    conflict(&mut q, &local, 2, None);
+    let copy = q.resolve_as_new(key, 2).unwrap();
+    assert_eq!(copy.recorded_settings, local.recorded_settings);
+    let mut invalid = entry();
+    invalid.recorded_settings = Some(RecordedSettings {
+        rounding_interval_minutes: Some(10),
+    });
+    assert!(q.enqueue(&invalid).is_err());
+    drop(q);
+    std::fs::remove_file(path).unwrap();
 }
 fn conflict(queue: &mut Queue, entry: &Entry, version: i64, remote: Option<Entry>) {
     queue

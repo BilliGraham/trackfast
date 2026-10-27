@@ -9,6 +9,9 @@ use tower::ServiceExt;
 use trackfast_api::{AppState, router};
 use uuid::Uuid;
 
+#[path = "cases/recorded_settings.rs"]
+mod recorded_settings;
+
 #[path = "cases/conflict_resolution.rs"]
 mod conflict_resolution;
 
@@ -179,6 +182,7 @@ async fn durable_client_recovers_after_lost_mutation_responses() {
     let other = f.other.clone();
     tokio::task::spawn_blocking(move || {
         let local = DurationEntry {
+            recorded_settings: None,
             project_id: None,
             timing: None,
             entry_id: Uuid::new_v4(),
@@ -286,6 +290,7 @@ async fn client_conflict_keeps_local_change_and_original_operation_key() {
     });
     let path = std::env::temp_dir().join(format!("trackfast-conflict-{}.db", Uuid::new_v4()));
     let local = DurationEntry {
+        recorded_settings: None,
         project_id: None,
         timing: None,
         entry_id: Uuid::new_v4(),
@@ -411,6 +416,7 @@ async fn invalid_receipt_does_not_remove_local_work() {
         {
             let mut queue = Queue::open(&path, &scope).unwrap();
             let local = DurationEntry {
+                recorded_settings: None,
                 project_id: None,
                 timing: None,
                 entry_id: Uuid::new_v4(),

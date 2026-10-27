@@ -167,5 +167,35 @@
       "deleted": true,
       "entry": null
     }
+  },
+  {
+    "name": "offline_exact_create",
+    "schema": "EntryCreate",
+    "value": {
+      "entry_id": "00000000-0000-4000-8000-000000000001",
+      "kind": "duration",
+      "entry_date": "2026-10-26",
+      "project_id": "00000000-0000-4000-8000-000000000002",
+      "description": "Development",
+      "original_seconds": 780,
+      "recorded_settings": {
+        "rounding_interval_minutes": null
+      }
+    }
+  },
+  {
+    "name": "offline_rounded_create",
+    "schema": "EntryCreate",
+    "value": {
+      "entry_id": "00000000-0000-4000-8000-000000000001",
+      "kind": "duration",
+      "entry_date": "2026-10-26",
+      "project_id": "00000000-0000-4000-8000-000000000002",
+      "description": "Development",
+      "original_seconds": 780,
+      "recorded_settings": {
+        "rounding_interval_minutes": 5
+      }
+    }
   }
 ]
