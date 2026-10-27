@@ -117,7 +117,7 @@ cargo test --locked --manifest-path sync-client/Cargo.toml native_vault_roundtri
 ```
 
 The live Google-to-API check is recorded in [API sessions](api-sessions.md).
-That earlier check used the Python tool. A live Google flow through this Rust client remains a separate check.
+That earlier check used the Python tool. The subsequent live Rust check also passed on Windows.
 The client currently accepts only canonical loopback HTTP addresses. Shared deployment and HTTPS configuration remain later work.
 The native sign-in interface, retry scheduling, and remaining conflict choices also remain later work.
 
@@ -153,7 +153,11 @@ A separate Windows test uses the real Rust executable and credential store with 
 That test passed. It proves the bridge and storage flow, not live Google authorization.
 The Rust example passed formatting, Clippy, compilation, and its input test on Windows and Linux.
 All 33 regular queue tests passed on both platforms. The three Python bridge tests passed on Windows.
-The live result must be recorded after the user completes the browser check.
+The user reported a successful live Rust check on Windows on October 27, 2026.
+The Rust client accepted the approved Google identity and stored the refresh credential.
+A new client instance restored that credential and renewed the session.
+Sign-out completed and the stored credential was removed. No time entries or Xero records changed.
+This check covers one approved account and restoration in a new client instance. It does not test a system restart or shared deployment.
 
 References: [keyring credential stores](https://docs.rs/keyring/3.6.3/keyring/)
 and [Rust file locking](https://doc.rust-lang.org/std/fs/struct.File.html#method.try_lock).

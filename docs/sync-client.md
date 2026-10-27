@@ -81,7 +81,7 @@ macOS and visual checks did not run. The interface did not change.
 
 ## Remaining work
 
-1. Complete a live Google flow through the Rust session client before connecting the native sign-in interface.
+1. Add the native sign-in interface after agreement on the app connection scope. The live Rust session check passed on Windows.
 2. Add scheduled retries and the remaining conflict choices, including explicit acceptance of a remote deletion.
 3. Agree on offline recording-time setting snapshots before connecting the native database worker and interface.
 4. Add Xero exports and restricted PM reports before the pilot.

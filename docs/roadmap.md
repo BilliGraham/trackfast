@@ -42,7 +42,8 @@ The local pilot API now supports Google identity, stored membership, expiring se
 See api-sessions.md. The native app remains separate.
 The live API session check passed on Windows on October 27: sign-in, renewal with unchanged ownership, and sign-out all passed.
 The separate Rust client now supports secure refresh storage, renewal, restart recovery, and sign-out cleanup.
-See client-sessions.md. A live Google flow through that Rust client remains untested.
+See client-sessions.md. The live Rust check passed on Windows on October 27.
+It covered Google sign-in, credential restoration in a new client instance, renewal, and sign-out cleanup.
 The native sign-in interface, shared hosting, and operational controls remain unfinished.
 Start phase 2A with duration-only entry creation, retrieval, replacement, and deletion.
 Do not connect the native app to HTTP during phase 1 or phase 2.
