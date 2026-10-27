@@ -11,6 +11,8 @@ use uuid::Uuid;
 
 #[path = "cases/projects.rs"]
 mod projects;
+#[path = "cases/retrieval.rs"]
+mod retrieval;
 #[path = "cases/settings.rs"]
 mod settings;
 #[path = "cases/timed.rs"]
@@ -171,6 +173,8 @@ async fn durable_client_recovers_after_lost_mutation_responses() {
     let other = f.other.clone();
     tokio::task::spawn_blocking(move || {
         let local = DurationEntry {
+            project_id: None,
+            timing: None,
             entry_id: Uuid::new_v4(),
             entry_date: "2026-10-26".parse().unwrap(),
             description: "Recovery test".into(),
@@ -276,6 +280,8 @@ async fn client_conflict_keeps_local_change_and_original_operation_key() {
     });
     let path = std::env::temp_dir().join(format!("trackfast-conflict-{}.db", Uuid::new_v4()));
     let local = DurationEntry {
+        project_id: None,
+        timing: None,
         entry_id: Uuid::new_v4(),
         entry_date: "2026-10-26".parse().unwrap(),
         description: "Local work".into(),
@@ -399,6 +405,8 @@ async fn invalid_receipt_does_not_remove_local_work() {
         {
             let mut queue = Queue::open(&path, &scope).unwrap();
             let local = DurationEntry {
+                project_id: None,
+                timing: None,
                 entry_id: Uuid::new_v4(),
                 entry_date: "2026-10-26".parse().unwrap(),
                 description: "Receipt test".into(),

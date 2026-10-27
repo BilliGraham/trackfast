@@ -1,8 +1,10 @@
 # Local operation queue and development transport
 
 The separate `sync-client/` Rust library provides a durable queue and a loopback HTTP adapter.
-It supports unassigned duration entries. Original seconds remain exact, and response checks support rounding Off or five-minute rounding.
-The native app is not connected. Timed entries and project access now work in the API, but this queue still supports unassigned durations only.
+It supports completed timed and duration entries with optional project assignments. Original seconds remain exact.
+Response checks support rounding Off or five-minute rounding. The native app is not connected.
+`Entry` stores the common fields, optional `project_id`, and optional `Timing`. `DurationEntry` remains a compatibility type name.
+For timed work, the supplied original seconds must match the endpoints. The transport omits that field from the timed request.
 Personal settings now work in the API. The client does not queue settings changes yet.
 
 ## Storage rules
@@ -17,6 +19,7 @@ Personal settings now work in the API. The client does not queue settings change
 Only one pending operation is allowed per entry. A further edit waits for confirmation or conflict resolution.
 An edit immediately saves its local values. A pending deletion retains the local entry until server confirmation.
 Migration 2 adds versions, deletion records, and conflict state. It preserves pending work from migration 1.
+Migration 3 adds a remote checkpoint and retained remote conflicts. Old entry bodies decode with no project or timing fields.
 
 The caller must run database and HTTP work on a worker thread.
 The library starts no worker and has no interface dependency.
@@ -43,7 +46,7 @@ The caller controls retry timing. There is no automatic retry loop or background
 ## Conflict handling
 
 A version conflict records conflict state and keeps the local values and original operation key.
-`DevelopmentClient::read` retrieves the current remote duration entry and version for review.
+`DevelopmentClient::read` retrieves the current remote timed or duration entry and version for review.
 After the user chooses the local values, the caller can use `Queue::resolve_with_local` with the reviewed remote version.
 This explicit action creates a new operation key and updates the expected version.
 If another client changes the entry again, the next request conflicts again.
@@ -78,12 +81,26 @@ macOS and visual checks did not run. The interface did not change.
 
 ## Remaining work
 
-1. Add timed-entry and project support to the queue, then complete entry-list pagination and remote change retrieval.
-2. Select and configure production identity. Google Workspace availability is unconfirmed.
-3. Add scheduled retries, remote change retrieval, and the remaining conflict choices.
-4. Connect the native database worker and interface after the required API operations work.
-5. Add Xero exports and restricted PM reports before the pilot.
+1. Select and configure production identity. Google Workspace availability is unconfirmed.
+2. Add scheduled retries and the remaining conflict choices, including explicit acceptance of a remote deletion.
+3. Agree on offline recording-time setting snapshots before connecting the native database worker and interface.
+4. Add Xero exports and restricted PM reports before the pilot.
 
 The approved rounding and date policies are recorded in `api-contract.md`.
 Remote entry reads expose the original duration, effective duration, and applied interval.
 This development adapter does not export to Xero or change export states.
+
+## Remote retrieval
+
+`list_entries` and `list_projects` return bounded pages. Follow their next cursors with unchanged filters and limits.
+`pull_changes` retrieves one page of up to 100 entry changes and returns whether another page is available.
+Call it again while more pages exist. Call it later to retrieve further changes. There is no scheduler in the library.
+The client checks identity, response size, entry ownership, timed fields, and calculated totals before applying a page.
+
+The queue saves the page and checkpoint in one SQLite transaction. A failed write retains the previous checkpoint.
+Changes to confirmed entries replace the local confirmed copy. Remote deletions retain an ID record that prevents reuse.
+Changes to entries with pending work retain both copies. `remote_conflict` exposes the remote copy or deletion for review.
+A later successful receipt cannot discard a newer remote version already received through the feed.
+The queue does not yet provide an accept-remote conflict action. Pending work remains available until explicit resolution.
+
+See [retrieval and project administration](retrieval-admin.md) for the endpoint rules and validation record.

@@ -10,7 +10,9 @@ This is a development implementation of part of the target OpenAPI contract.
 - Derive elapsed seconds and validate the saved time zone for timed entries.
 - List assigned projects with account-bound cursors and check access before saving project time.
 - Read the authenticated tenant and person through `GET /v1/me` before sync.
-- List the caller's entries within an inclusive date range containing at most 100 results.
+- List the caller's entries within an inclusive date range, with bounded pages and account-bound cursors.
+- Retrieve ordered personal entry changes, including deletion records.
+- Create, edit, archive, restore, and assign projects through explicit project-administrator access.
 - Preserve exact original seconds and calculate effective seconds with the entry's applied rounding interval.
 - Read and replace personal rounding, weekly target, and visual indicator settings.
 - Derive the owner from a configured development credential.
@@ -20,8 +22,8 @@ This is a development implementation of part of the target OpenAPI contract.
 - Retain deletion records and reject reuse of a deleted entry ID for the same person.
 
 Entries can be unassigned or belong to an active project assigned to the caller.
-See [timed entries and project access](timed-projects.md). Entry-list pagination remains unfinished.
-More than 100 matching entries returns a validation error. It never returns an incomplete list as a complete result.
+See [timed entries and project access](timed-projects.md) and [retrieval and project administration](retrieval-admin.md).
+Entry lists accept limits from 1 through 100 and return a next cursor when more results exist.
 Personal settings default to five-minute rounding, 35 weekly hours, and the progress indicator.
 See [settings and rounding](settings.md) for the approved rules and migration behaviour.
 
@@ -36,6 +38,7 @@ The binary requires these environment variables:
 | `TRACKFAST_DEV_TOKEN` | A random development bearer token with at least 32 characters. |
 | `TRACKFAST_DEV_TENANT_ID` | A stable UUID for the test organisation. |
 | `TRACKFAST_DEV_PERSON_ID` | A stable UUID for the test person. |
+| `TRACKFAST_DEV_PROJECT_ADMIN` | Optional `1` grants this configured identity project administration. The default grants no admin access. |
 
 Supply credentials through your local environment. Do not commit them or paste them into chat.
 Use the same tenant and person IDs after restart to access the same entries.
@@ -54,7 +57,9 @@ Use `Authorization: Bearer <development token>` for requests.
 Use a fresh UUID in `Idempotency-Key` for each new mutation. Keep that key for its retries.
 Read the ETag before a replacement or deletion. Send it unchanged in If-Match.
 Use the duration-only example in `api/examples.json` with a fresh entry ID.
-The server implements personal settings and project listing. Project administration remains a later task.
+The server implements personal settings, project listing, and explicit project administration.
+Project membership accepts only people configured in this tenant. The binary configures one person.
+Development test hosts can configure more credentials through `AppState::development`.
 The separate `sync-client/` library now uses this API. It checks the account before sending entries.
 The native app is not connected. Production identity remains unconfigured.
 

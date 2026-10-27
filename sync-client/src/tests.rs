@@ -1,5 +1,100 @@
 use super::*;
 
+#[test]
+fn a_late_receipt_does_not_discard_a_newer_pulled_change() {
+    let mut queue = queue();
+    let local = entry();
+    let key = queue.enqueue(&local).unwrap();
+    let mut newer = local.clone();
+    newer.description = "Changed on another client".into();
+    queue
+        .apply_remote_page(
+            None,
+            Uuid::new_v4(),
+            &[crate::transport::RemoteChange {
+                entry_id: local.entry_id,
+                version: 2,
+                entry: Some(newer.clone()),
+            }],
+        )
+        .unwrap();
+    queue.confirm(key).unwrap();
+    assert_eq!(queue.entry(local.entry_id).unwrap(), Some(newer));
+    assert!(queue.pending().unwrap().is_empty());
+}
+
+#[test]
+fn remote_pages_keep_pending_work_and_commit_the_checkpoint_with_changes() {
+    let mut queue = queue();
+    let local = entry();
+    let key = queue.enqueue(&local).unwrap();
+    queue.confirm(key).unwrap();
+    let mut edit = local.clone();
+    edit.description = "Unsent work".into();
+    let pending = queue.replace(&edit).unwrap();
+    let checkpoint = Uuid::new_v4();
+    let change = crate::transport::RemoteChange {
+        entry_id: local.entry_id,
+        version: 2,
+        entry: None,
+    };
+    queue
+        .apply_remote_page(None, checkpoint, &[change])
+        .unwrap();
+    assert_eq!(queue.entry(local.entry_id).unwrap(), Some(edit));
+    assert_eq!(queue.pending().unwrap()[0].operation_id, pending);
+    assert_eq!(queue.checkpoint().unwrap(), Some(checkpoint));
+    assert!(
+        queue
+            .remote_conflict(local.entry_id)
+            .unwrap()
+            .unwrap()
+            .entry
+            .is_none()
+    );
+    let next = Uuid::new_v4();
+    assert!(queue.apply_remote_page(None, next, &[]).is_err());
+    assert_eq!(queue.checkpoint().unwrap(), Some(checkpoint));
+    queue.connection.execute_batch("CREATE TRIGGER reject_checkpoint BEFORE UPDATE ON remote_checkpoint BEGIN SELECT RAISE(ABORT,'Test failure'); END;").unwrap();
+    let remote = entry();
+    let change = crate::transport::RemoteChange {
+        entry_id: remote.entry_id,
+        version: 1,
+        entry: Some(remote.clone()),
+    };
+    assert!(
+        queue
+            .apply_remote_page(Some(checkpoint), next, &[change])
+            .is_err()
+    );
+    assert!(queue.entry(remote.entry_id).unwrap().is_none());
+    assert_eq!(queue.checkpoint().unwrap(), Some(checkpoint));
+}
+
+#[test]
+fn timed_project_work_survives_restart_and_rejects_wrong_offsets() {
+    let path = std::env::temp_dir().join(format!("timed-{}.db", Uuid::new_v4()));
+    let owner = scope();
+    let mut work = entry();
+    work.project_id = Some(Uuid::new_v4());
+    work.original_seconds = 780;
+    work.timing = Some(Timing {
+        started_at: "2026-10-26T09:03:00+02:00".into(),
+        stopped_at: "2026-10-26T09:16:00+02:00".into(),
+        time_zone: "Africa/Johannesburg".into(),
+    });
+    let key = Queue::open(&path, &owner).unwrap().enqueue(&work).unwrap();
+    let mut reopened = Queue::open(&path, &owner).unwrap();
+    assert_eq!(reopened.pending().unwrap()[0].entry, work);
+    assert_eq!(reopened.pending().unwrap()[0].operation_id, key);
+    work.entry_id = Uuid::new_v4();
+    work.timing.as_mut().unwrap().started_at = "2026-10-26T09:03:00Z".into();
+    assert!(reopened.enqueue(&work).is_err());
+    assert_eq!(reopened.pending().unwrap().len(), 1);
+    drop(reopened);
+    std::fs::remove_file(path).unwrap();
+}
+
 fn scope() -> Scope {
     Scope {
         server: "http://127.0.0.1:8788".into(),
@@ -10,6 +105,8 @@ fn scope() -> Scope {
 
 fn entry() -> DurationEntry {
     DurationEntry {
+        project_id: None,
+        timing: None,
         entry_id: Uuid::new_v4(),
         entry_date: NaiveDate::from_ymd_opt(2026, 10, 26).unwrap(),
         description: "Test work".into(),

@@ -10,12 +10,14 @@ The GitHub repository is BilliGraham/trackfast. The user selected public visibil
 The separate [development API](docs/server.md) stores completed timed and duration-only entries in Postgres.
 It uses local development credentials. The desktop app is not connected to it.
 Phase 3 starts with a separate [durable operation queue](docs/sync-client.md).
-The queue can create, edit, and delete duration entries through the local development API.
+The queue can create, edit, and delete timed and duration entries with optional projects through the local development API.
+It can retrieve entry pages, assigned projects, and ordered remote changes, including deletions.
 It checks account identity and responses, preserves retry keys, and retains conflicts for explicit resolution.
 The desktop app still uses its existing local database.
 The API now has [personal settings](docs/settings.md) for rounding, the weekly target, and the visual indicator.
 Defaults are five-minute rounding, 35 hours per week, and the progress indicator. The native app has separate local settings with the same defaults.
 The API also has [saved time zones and project access checks](docs/timed-projects.md), with private, paginated project lists.
+[Project administration and remote retrieval](docs/retrieval-admin.md) add explicit admin grants, versioned membership updates, and durable change checkpoints.
 
 ## Current scope
 

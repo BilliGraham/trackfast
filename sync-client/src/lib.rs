@@ -4,12 +4,15 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use uuid::Uuid;
 
+mod entry;
+mod remote;
 pub mod transport;
 
 const APPLICATION_ID: i32 = 0x54465351;
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_queue.sql"),
     include_str!("../migrations/002_changes.sql"),
+    include_str!("../migrations/003_remote.sql"),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,11 +23,25 @@ pub struct Scope {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DurationEntry {
+pub struct Entry {
+    #[serde(default)]
+    pub project_id: Option<Uuid>,
+    #[serde(default)]
+    pub timing: Option<Timing>,
     pub entry_id: Uuid,
     pub entry_date: NaiveDate,
     pub description: String,
     pub original_seconds: u64,
+}
+
+/// Compatibility name for callers that already use duration entries.
+pub type DurationEntry = Entry;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Timing {
+    pub started_at: String,
+    pub stopped_at: String,
+    pub time_zone: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,7 +71,7 @@ impl std::fmt::Display for Error {
         f.write_str(match self {
             Self::Storage => "The local queue operation failed.",
             Self::ScopeMismatch => "This queue belongs to another account or server.",
-            Self::InvalidEntry => "Check the duration entry fields.",
+            Self::InvalidEntry => "Check the entry fields.",
             Self::DuplicateEntry => "This entry already exists in the local queue.",
             Self::UnknownOperation => "The pending operation is unavailable.",
             Self::IncompatibleDatabase => "This file is not a compatible queue database.",
@@ -230,7 +247,7 @@ impl Queue {
         })
     }
 
-    /// Save one immutable duration entry and its pending creation together.
+    /// Save one immutable entry and its pending creation together.
     pub fn enqueue(&mut self, entry: &DurationEntry) -> Result<Uuid, Error> {
         validate(entry)?;
         let body = serde_json::to_string(entry).map_err(storage)?;
@@ -291,6 +308,31 @@ impl Queue {
             params![id, version, action == "delete"],
         )
         .map_err(storage)?;
+        let remote: Option<String> = tx
+            .query_row(
+                "SELECT body FROM remote_conflicts WHERE entry_id=?1",
+                [&id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(storage)?;
+        if let Some(remote) = remote {
+            let remote: transport::RemoteChange = serde_json::from_str(&remote).map_err(storage)?;
+            if remote.version > version {
+                tx.execute(
+                    "UPDATE entries SET body=?2,server_version=?3,deleted=?4 WHERE entry_id=?1",
+                    params![
+                        id,
+                        serde_json::to_string(&remote.entry).map_err(storage)?,
+                        remote.version,
+                        remote.entry.is_none()
+                    ],
+                )
+                .map_err(storage)?;
+            }
+        }
+        tx.execute("DELETE FROM remote_conflicts WHERE entry_id=?1", [&id])
+            .map_err(storage)?;
         tx.execute("DELETE FROM pending WHERE operation_id=?1", [&key])
             .map_err(storage)?;
         tx.commit().map_err(storage)?;
@@ -313,6 +355,9 @@ impl Queue {
 }
 
 fn validate(entry: &DurationEntry) -> Result<(), Error> {
+    if let Some(timing) = &entry.timing {
+        timing.validate(entry)?;
+    }
     if entry.original_seconds == 0
         || entry.original_seconds > 9_007_199_254_740_991
         || entry.description.chars().count() > 2000

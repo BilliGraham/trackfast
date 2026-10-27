@@ -136,7 +136,7 @@ async fn project_ids_and_cursors_do_not_cross_tenants_for_the_same_person() {
     f.close().await;
 }
 
-async fn seed(f: &Fixture, token: &str, archived: bool) -> (Uuid, Uuid, Uuid) {
+pub(super) async fn seed(f: &Fixture, token: &str, archived: bool) -> (Uuid, Uuid, Uuid) {
     let identity = f
         .send("GET", "/v1/me", Some(token), None, None, Value::Null)
         .await

@@ -146,5 +146,26 @@
       "message": "The entry changed. Retrieve its current version.",
       "request_id": "00000000-0000-4000-8000-000000000001"
     }
+  },
+  {
+    "name": "project_create",
+    "schema": "ProjectCreate",
+    "value": {
+      "project_id": "00000000-0000-4000-8000-000000000001",
+      "name": "Pilot",
+      "colour": "#aa00ff",
+      "archived": false,
+      "member_ids": []
+    }
+  },
+  {
+    "name": "entry_deleted",
+    "schema": "EntryChange",
+    "value": {
+      "entry_id": "00000000-0000-4000-8000-000000000002",
+      "version": 2,
+      "deleted": true,
+      "entry": null
+    }
   }
 ]

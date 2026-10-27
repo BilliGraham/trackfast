@@ -75,6 +75,9 @@ Offline setting snapshots and Xero sub-minute remainders still require decisions
 | Operation | Purpose |
 | --- | --- |
 | `GET /v1/me` | Read the authenticated tenant and person before sync. |
+| `GET /v1/me/entry-changes` | Retrieve ordered personal entry changes, including deletions. |
+| `GET, POST /v1/admin/projects` | List tenant projects or create one with explicit admin access. |
+| `GET, PUT /v1/admin/projects/{project_id}` | Read or replace project details and membership with version checks. |
 | `GET /v1/projects` | List projects available for the person's own time entries. |
 | `POST /v1/me/entries` | Create a completed entry with a stable client ID. |
 | `GET /v1/me/entries` | List the person's entries in a bounded date range. |
@@ -96,7 +99,10 @@ Project pagination uses 15-minute cursors bound to tenant, person, and page size
 See [timed entries and projects](timed-projects.md) for the implemented rules and development provisioning limits.
 Date bounds are inclusive. Start must not exceed end.
 List responses contain an opaque next cursor or null. Bind cursors to identity and filters.
-The API must impose bounded page sizes. Project lists are live paginated results. Entry-list cursors and remote change retrieval remain unfinished.
+The API imposes bounded page sizes. Project and entry lists are live paginated results.
+Entry cursors bind to both date bounds and page size, and expire after 15 minutes.
+The personal change feed includes deletions and uses durable checkpoints. Save each checkpoint with its page.
+See [retrieval and project administration](retrieval-admin.md) for commit ordering, retention, and admin authorization.
 
 ## Proposed mutation and retry rules
 
@@ -109,7 +115,8 @@ Return 409 idempotency_conflict when that key identifies a different request.
 Check replay before evaluating a now-stale If-Match value.
 This also allows a successful delete to replay its 204 response after the entry disappears.
 Do not reuse a deleted entry ID to create a new entry.
-Retain deletion records for sync. Decide key retention and deletion retention before offline integration.
+Retain deletion records for sync. The development service retains receipts, changes, and change checkpoints indefinitely.
+Decide production retention and recovery rules before shared rollout.
 
 Each accepted update increments the server version. ETags are quoted version numbers, for example `"1"`.
 PUT and DELETE require If-Match. Return 428 when it is absent and 412 when the version changed.

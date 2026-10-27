@@ -178,6 +178,7 @@ async fn mutate(
     if let Some(reply) = crate::operations::replay(&tx, actor, key, &request).await? {
         return Ok(reply);
     }
+    crate::changes::lock(&tx, actor).await?;
     let saved = tx.query_opt("SELECT version,deleted,data FROM api_entries WHERE tenant_id=$1 AND person_id=$2 AND entry_id=$3 FOR UPDATE", &[&actor.tenant,&actor.person,&id]).await.map_err(internal)?;
     let version = if action == "create" {
         if saved.is_some() {
@@ -238,6 +239,7 @@ async fn mutate(
         tx.execute("UPDATE api_entries SET version=$4,deleted=$5,data=$6 WHERE tenant_id=$1 AND person_id=$2 AND entry_id=$3", &[&actor.tenant,&actor.person,&id,&version,&(action=="delete"),&data]).await.map_err(internal)?;
     }
     tx.execute("INSERT INTO api_audit(tenant_id,person_id,entry_id,operation_id,action,data) VALUES ($1,$2,$3,$4,$5,$6)", &[&actor.tenant,&actor.person,&id,&key,&action,&data]).await.map_err(internal)?;
+    crate::changes::record(&tx, actor, id, version, action == "delete", &data).await?;
     let reply = Reply {
         status: match action {
             "create" => 201,
@@ -283,6 +285,8 @@ pub(crate) async fn read(
 pub(crate) struct ListQuery {
     from_date: String,
     to_date: String,
+    limit: Option<u16>,
+    cursor: Option<Uuid>,
 }
 
 pub(crate) async fn list(
@@ -297,20 +301,36 @@ pub(crate) async fn list(
     if from > to {
         return Err(invalid());
     }
-    let client = state.connect().await?;
-    let rows = client.query("SELECT data FROM api_entries WHERE tenant_id=$1 AND person_id=$2 AND NOT deleted AND data->>'entry_date' >= $3 AND data->>'entry_date' <= $4 ORDER BY entry_id LIMIT 101", &[&actor.tenant,&actor.person,&query.from_date,&query.to_date]).await.map_err(internal)?;
-    if rows.len() > 100 {
-        return Err(ApiError(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "validation_failed",
-            "Use a smaller date range. Pagination is not implemented in this development slice.",
-        ));
-    }
+    let limit = crate::pages::limit(query.limit)?;
+    let filters = json!({"from":query.from_date,"to":query.to_date,"limit":limit});
+    let mut client = state.connect().await?;
+    let tx = client.transaction().await.map_err(internal)?;
+    let position = crate::pages::position(&tx, actor, query.cursor, "entries", &filters).await?;
+    let after: Option<Uuid> = position
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(internal)?;
+    let rows = tx.query("SELECT entry_id,data FROM api_entries WHERE tenant_id=$1 AND person_id=$2 AND NOT deleted AND data->>'entry_date' >= $3 AND data->>'entry_date' <= $4 AND ($5::uuid IS NULL OR entry_id > $5) ORDER BY entry_id LIMIT $6", &[&actor.tenant,&actor.person,&query.from_date,&query.to_date,&after,&(limit+1)]).await.map_err(internal)?;
+    let items: Vec<Value> = rows.iter().take(limit as usize).map(|r| r.get(1)).collect();
+    let next = if rows.len() > limit as usize {
+        Some(
+            crate::pages::save(
+                &tx,
+                actor,
+                "entries",
+                &filters,
+                &json!(rows[limit as usize - 1].get::<_, Uuid>(0)),
+                false,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    tx.commit().await.map_err(internal)?;
     Ok(Reply {
         status: 200,
-        body: Some(
-            json!({"items":rows.iter().map(|r|r.get::<_,Value>(0)).collect::<Vec<_>>(),"next_cursor":null}),
-        ),
+        body: Some(json!({"items":items,"next_cursor":next})),
         etag: None,
         location: None,
     })

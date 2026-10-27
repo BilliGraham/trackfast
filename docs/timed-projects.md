@@ -1,8 +1,8 @@
 # Timed entries and project access
 
 The development API accepts completed timed entries and duration-only entries.
-The native app and the separate sync queue are not connected to the new timed-entry or project features yet.
-The sync queue still sends unassigned duration entries only.
+The separate sync queue supports these entry modes and optional project assignments.
+The native app remains separate from the API.
 
 ## Timed entries
 
@@ -54,8 +54,8 @@ A person can move their own entry to an active accessible project or leave it un
 After membership removal, they can still retrieve or delete their own history. Further edits that keep the inaccessible project are rejected.
 An identical accepted retry still returns its stored receipt without another mutation.
 
-Projects and membership rows are provisioned through trusted database administration in this development phase.
-There is no public project creation, membership grant, or administration endpoint yet.
+Explicit development administrators can now create projects and change details, archive state, and membership through the API.
+See [retrieval and project administration](retrieval-admin.md) for provisioning and endpoint rules.
 This membership check does not implement production sign-in or PM reporting permissions.
 
 ## Project pagination
@@ -68,7 +68,7 @@ Invalid, expired, or mismatched cursors return 422. Restart the list without a c
 Pages use project UUID order and check current membership on every request.
 They are a live list, not a snapshot. A project added below the current position appears on the next complete refresh.
 Archived assigned projects remain in the list so clients can identify them as archived.
-Entry-list pagination remains separate unfinished work.
+Entry lists now use the same bounded-page pattern, with date filters bound to each cursor.
 
 ## TDD evidence
 

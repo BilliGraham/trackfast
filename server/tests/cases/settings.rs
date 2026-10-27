@@ -25,7 +25,7 @@ async fn migration_keeps_legacy_exact_entries_while_new_entries_use_defaults() {
     tokio::spawn(async move {
         connection.await.unwrap();
     });
-    client.batch_execute("DROP TABLE api_project_cursors; DROP TABLE api_project_members; DROP TABLE api_projects; DROP TABLE api_settings_audit; DROP TABLE api_settings; DELETE FROM api_migrations WHERE version>=2;").await.unwrap();
+    client.batch_execute("DROP TABLE api_page_cursors; DROP TABLE api_entry_changes; DROP TABLE api_entry_clocks; DROP TABLE api_project_audit; DROP TABLE api_project_cursors; DROP TABLE api_project_members; DROP TABLE api_projects; DROP TABLE api_settings_audit; DROP TABLE api_settings; DELETE FROM api_migrations WHERE version>=2;").await.unwrap();
     client.execute("INSERT INTO api_entries(tenant_id,person_id,entry_id,version,data) VALUES ($1,$2,$3,1,$4)", &[&tenant,&person,&id,&legacy]).await.unwrap();
     f.state.migrate().await.unwrap();
     f.state.migrate().await.unwrap();
@@ -40,6 +40,17 @@ async fn migration_keeps_legacy_exact_entries_while_new_entries_use_defaults() {
         )
         .await;
     assert_eq!(retrieved.1, legacy);
+    let changes = f
+        .send(
+            "GET",
+            "/v1/me/entry-changes",
+            Some(&f.token),
+            None,
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(changes.1["items"][0]["entry"], legacy);
     let mut replacement = entry(id);
     replacement.as_object_mut().unwrap().remove("entry_id");
     replacement["original_seconds"] = json!(450);

@@ -1,4 +1,6 @@
+mod retrieval;
 use crate::{Queue, Scope};
+pub use retrieval::{Page, Project, RemoteChange};
 use serde_json::{Value, json};
 use std::{net::SocketAddr, time::Duration};
 
@@ -105,7 +107,7 @@ impl DevelopmentClient {
             .read_json()
             .map_err(|_| SyncError::InvalidReceipt)?;
         let entry: crate::DurationEntry =
-            serde_json::from_value(value.clone()).map_err(|_| SyncError::InvalidReceipt)?;
+            crate::Entry::from_response(&value).map_err(|_| SyncError::InvalidReceipt)?;
         crate::validate(&entry).map_err(|_| SyncError::InvalidReceipt)?;
         let version = value["version"]
             .as_i64()
@@ -115,8 +117,6 @@ impl DevelopmentClient {
             checked_rounding(&value, entry.original_seconds)?;
         if entry.entry_id != entry_id
             || value["person_id"] != json!(self.scope.person_id)
-            || value["kind"] != "duration"
-            || value.get("project_id") != Some(&Value::Null)
             || etag != format!("\"{version}\"")
         {
             return Err(SyncError::InvalidReceipt);
@@ -185,7 +185,7 @@ impl DevelopmentClient {
         let mut confirmed = 0;
         for pending in queue.pending().map_err(|_| SyncError::Storage)? {
             let entry = &pending.entry;
-            let body = json!({"entry_id":entry.entry_id,"kind":"duration","entry_date":entry.entry_date,"project_id":null,"description":entry.description,"original_seconds":entry.original_seconds});
+            let body = entry.request();
             let (action, expected) = queue
                 .operation_details(pending.operation_id)
                 .map_err(|_| SyncError::Storage)?;
@@ -252,6 +252,11 @@ impl DevelopmentClient {
                 .read_json()
                 .map_err(|_| SyncError::InvalidReceipt)?;
             checked_rounding(&receipt, entry.original_seconds)?;
+            if crate::Entry::from_response(&receipt).map_err(|_| SyncError::InvalidReceipt)?
+                != *entry
+            {
+                return Err(SyncError::InvalidReceipt);
+            }
             if body
                 .as_object()
                 .unwrap()

@@ -32,7 +32,9 @@ Calendar drag selection and a separate Day blocks view now support direct entry 
 The native glass indicator was removed after user review.
 See local-refinement.md for the phase 2B changes and validation. The native app remains separate from the API.
 Timed entries now use their start date in a saved time zone. Project membership checks and project pagination now work in the API.
-Project administration, entry-list pagination, and the matching client workflows remain unfinished.
+The queue now supports timed entries and project assignments. Entry-list pagination, ordered remote changes, and project administration now work.
+The queue retains remote conflicts and checkpoints across restarts. See retrieval-admin.md.
+Production identity, scheduled retries, remaining conflict choices, and native connection work remain unfinished.
 Calendar-based holiday and leave adjustments are later work. Keep the configurable base target separate from calculated weekly adjustments.
 Google Workspace availability is unconfirmed. Select and configure the production identity provider before shared access.
 Start phase 2A with duration-only entry creation, retrieval, replacement, and deletion.

@@ -36,7 +36,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let tenant = Uuid::parse_str(&env::var("TRACKFAST_DEV_TENANT_ID")?)?;
     let person = Uuid::parse_str(&env::var("TRACKFAST_DEV_PERSON_ID")?)?;
-    let state = AppState::development(config, vec![(token, tenant, person)]);
+    let mut state = AppState::development(config, vec![(token, tenant, person)]);
+    if env::var("TRACKFAST_DEV_PROJECT_ADMIN").as_deref() == Ok("1") {
+        state = state.with_development_administrators(vec![(tenant, person)]);
+    }
     state
         .migrate()
         .await

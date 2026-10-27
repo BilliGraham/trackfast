@@ -1,5 +1,8 @@
+mod changes;
 mod entries;
 mod operations;
+mod pages;
+mod project_admin;
 mod projects;
 mod settings;
 mod timed;
@@ -22,6 +25,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_entries.sql"),
     include_str!("../migrations/002_settings.sql"),
     include_str!("../migrations/003_projects.sql"),
+    include_str!("../migrations/004_retrieval_admin.sql"),
 ];
 
 #[derive(Clone, Copy)]
@@ -34,6 +38,7 @@ struct Actor {
 pub struct AppState {
     config: Config,
     credentials: Arc<HashMap<[u8; 32], Actor>>,
+    administrators: Arc<std::collections::HashSet<(Uuid, Uuid)>>,
 }
 
 impl AppState {
@@ -57,7 +62,36 @@ impl AppState {
         Self {
             config,
             credentials: Arc::new(credentials),
+            administrators: Default::default(),
         }
+    }
+
+    /// Grants project administration to explicitly configured development identities.
+    /// Unconfigured identities are never accepted as project members.
+    pub fn with_development_administrators(mut self, people: Vec<(Uuid, Uuid)>) -> Self {
+        self.administrators = Arc::new(
+            people
+                .into_iter()
+                .filter(|(tenant, person)| {
+                    self.credentials
+                        .values()
+                        .any(|a| a.tenant == *tenant && a.person == *person)
+                })
+                .collect(),
+        );
+        self
+    }
+
+    fn administrator(&self, headers: &HeaderMap) -> Result<Actor, ApiError> {
+        let actor = self.actor(headers)?;
+        if !self.administrators.contains(&(actor.tenant, actor.person)) {
+            return Err(ApiError(
+                StatusCode::FORBIDDEN,
+                "forbidden",
+                "Project administration is not permitted.",
+            ));
+        }
+        Ok(actor)
     }
 
     async fn connect(&self) -> Result<Client, ApiError> {
@@ -216,6 +250,15 @@ async fn identity(
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/v1/me", get(identity))
+        .route("/v1/me/entry-changes", get(changes::list))
+        .route(
+            "/v1/admin/projects",
+            get(project_admin::list).post(project_admin::create),
+        )
+        .route(
+            "/v1/admin/projects/{project_id}",
+            get(project_admin::read).put(project_admin::replace),
+        )
         .route("/v1/projects", get(projects::list))
         .route(
             "/v1/me/settings",

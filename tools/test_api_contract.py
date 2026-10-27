@@ -49,6 +49,21 @@ class ApiContract(unittest.TestCase):
     def duration(self):
         return copy.deepcopy(next(c['value'] for c in self.cases if c['name'] == 'duration_create'))
 
+    def test_change_feed_and_project_admin_contracts(self):
+        self.assertIn('/v1/me/entry-changes', self.document['paths'])
+        self.assertIn('/v1/admin/projects', self.document['paths'])
+        self.assertIn('/v1/admin/projects/{project_id}', self.document['paths'])
+        project = {'name': 'Pilot', 'colour': '#aa00ff', 'archived': False,
+                   'member_ids': ['00000000-0000-4000-8000-000000000001']}
+        self.validator('ProjectWrite').validate(project)
+        project['role'] = 'admin'
+        self.assertFalse(self.validator('ProjectWrite').is_valid(project))
+        change = {'entry_id': '00000000-0000-4000-8000-000000000001',
+                  'version': 2, 'deleted': True, 'entry': None}
+        self.validator('EntryChange').validate(change)
+        change['deleted'] = False
+        self.assertFalse(self.validator('EntryChange').is_valid(change))
+
     def test_identity_response_requires_both_scope_ids(self):
         self.assertIn('/v1/me', self.document['paths'])
         value = {'tenant_id': '00000000-0000-4000-8000-000000000001',
