@@ -59,11 +59,96 @@ impl App {
 
     fn apply(&mut self, action: Action, ctx: &egui::Context) {
         let now = Timestamp::now();
+        self.state.notice = None;
         // Without data, the problem explains why the app cannot open, so it stays.
         if self.state.data.is_some() {
             self.state.problem = None;
         }
         match action {
+            Action::DraftEntry(draft) => {
+                if !self.state.saving && self.drafts.entry.is_none() {
+                    self.drafts.entry = Some(*draft);
+                }
+            }
+            Action::StartEntry => {
+                if self.state.saving {
+                    return;
+                }
+                if let Some(draft) = &self.drafts.entry {
+                    if draft.description.trim().is_empty() {
+                        self.state.problem = Some("Enter what you are working on.".into());
+                        return;
+                    }
+                    if !self.state.data.as_ref().is_some_and(|data| data.has_room()) {
+                        self.state.problem = Some(
+                            "The widget has three tasks. Remove one before starting another."
+                                .into(),
+                        );
+                        return;
+                    }
+                    self.state.saving = true;
+                    self.send(Command::StartEntry(
+                        Task {
+                            description: draft.description.trim().into(),
+                            project_id: draft.project_id,
+                        },
+                        now,
+                    ));
+                }
+            }
+
+            Action::EditEntry(id) => {
+                if self.state.saving {
+                    return;
+                }
+                self.drafts.entry = Some(
+                    id.and_then(|id| {
+                        self.state
+                            .data
+                            .as_ref()?
+                            .sessions
+                            .iter()
+                            .find(|s| s.id == id)
+                    })
+                    .map(|s| crate::model::EntryDraft::from_session(s, &TimeZone::system()))
+                    .unwrap_or_else(|| crate::model::EntryDraft::new(now, &TimeZone::system())),
+                );
+            }
+            Action::CancelEntry => {
+                if !self.state.saving {
+                    self.drafts.entry = None;
+                    self.drafts.delete_entry = None;
+                }
+            }
+            Action::SaveEntry => {
+                if self.state.saving {
+                    return;
+                }
+                if let Some(draft) = &self.drafts.entry {
+                    match draft.session() {
+                        Ok(entry) => {
+                            self.state.saving = true;
+                            self.send(Command::SaveEntry(entry));
+                        }
+                        Err(error) => self.state.problem = Some(error),
+                    }
+                }
+            }
+            Action::DeleteEntry(id) => {
+                if !self.state.saving {
+                    self.state.saving = true;
+                    self.send(Command::DeleteEntry(id));
+                }
+            }
+            Action::SaveSettings => {
+                if !self.state.saving
+                    && let Some(settings) = &self.drafts.settings
+                {
+                    self.state.saving = true;
+                    self.send(Command::SaveSettings(settings.clone()));
+                }
+            }
+
             Action::Navigate(screen) => self.state.screen = screen,
             Action::OpenWidget => self.state.widget_open = true,
             Action::CloseWidget => self.state.widget_open = false,
@@ -158,6 +243,25 @@ impl App {
         if let Some((_, events)) = &self.database {
             while let Some(event) = events.try_recv() {
                 match event {
+                    Event::Saved(saved) => {
+                        self.state.saving = false;
+                        self.state.notice = Some("Saved on this computer.".into());
+                        match saved {
+                            crate::db::worker::Saved::Entry => {
+                                if let Some(draft) = self.drafts.entry.take()
+                                    && let Ok(entry) = draft.session()
+                                {
+                                    self.send(Command::LoadFrom(entry.start));
+                                }
+                            }
+                            crate::db::worker::Saved::Started => {
+                                self.drafts.entry = None;
+                                self.state.widget_open = true;
+                            }
+                            crate::db::worker::Saved::Settings => self.drafts.settings = None,
+                            crate::db::worker::Saved::Deletion => self.drafts.delete_entry = None,
+                        }
+                    }
                     Event::Changed(snapshot) => self.state.data = Some(snapshot),
                     Event::Imported(count) => {
                         self.state.import = ImportState::Done(format!(
@@ -166,6 +270,7 @@ impl App {
                         ));
                     }
                     Event::Failed(problem) => {
+                        self.state.saving = false;
                         if matches!(self.state.import, ImportState::Running(_)) {
                             self.state.import = ImportState::Failed(problem.clone());
                         }

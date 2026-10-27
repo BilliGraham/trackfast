@@ -12,6 +12,10 @@ use crate::entries::{Snapshot, Task};
 
 pub enum Command {
     AddTask(Task, Timestamp),
+    StartEntry(Task, Timestamp),
+    SaveEntry(crate::entries::Session),
+    DeleteEntry(i64),
+    SaveSettings(crate::entries::Settings),
     Play(i64, Timestamp),
     Pause(i64, Timestamp),
     RemoveRow(i64, Timestamp),
@@ -22,7 +26,16 @@ pub enum Command {
     Import(Import),
 }
 
+#[derive(Clone, Copy)]
+pub enum Saved {
+    Started,
+    Entry,
+    Settings,
+    Deletion,
+}
+
 pub enum Event {
+    Saved(Saved),
     Changed(Snapshot),
     Imported(ImportCount),
     Failed(String),
@@ -87,7 +100,18 @@ fn run(
     };
     publish(&store, loaded_from);
     while let Ok(command) = commands.recv() {
+        let saved = match &command {
+            Command::StartEntry(_, _) => Some(Saved::Started),
+            Command::SaveEntry(_) => Some(Saved::Entry),
+            Command::SaveSettings(_) => Some(Saved::Settings),
+            Command::DeleteEntry(_) => Some(Saved::Deletion),
+            _ => None,
+        };
         let result = match command {
+            Command::SaveEntry(entry) => store.save_entry(&entry),
+            Command::DeleteEntry(id) => store.delete_entry(id),
+            Command::SaveSettings(settings) => store.save_settings(&settings),
+            Command::StartEntry(task, at) => store.add_task(&task, at),
             Command::AddTask(task, at) => store.add_task(&task, at),
             Command::Play(row, at) => store.play(row, at),
             Command::Pause(row, at) => store.pause(row, at),
@@ -102,6 +126,11 @@ fn run(
                 notify(Event::Imported(count));
             }),
         };
+        if let Some(saved) = saved
+            && result.is_ok()
+        {
+            notify(Event::Saved(saved));
+        }
         if let Err(error) = result {
             notify(Event::Failed(error.to_string()));
         }

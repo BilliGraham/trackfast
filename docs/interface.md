@@ -26,7 +26,14 @@ The main button shows Open widget or Close widget to match the current window st
 
 The Projects screen lists projects with their colour and client. Archived projects are last.
 The project form has a name, an optional client with suggestions from existing clients, and a colour palette.
-The Settings screen has the Toggl import form.
+The Settings screen has local rounding and weekly target controls above the Toggl import form.
+The Timer screen has an Add entry button. Its form accepts a duration or a start and stop.
+The form previews recorded time and the effective total. Keyboard shortcuts open, save, and cancel the form.
+Duration entries appear above the calendar without a time-of-day position.
+Entry menus allow correction. The list also allows deletion with confirmation.
+The weekly indicator uses the selected calendar week or the current week in the list.
+Narrow windows use compact calendar headings and a shorter running-status area.
+See [local entries and settings](local-refinement.md).
 Disabled controls explain their current limit on hover.
 Empty screens use short messages without development plans or sample account data.
 
@@ -41,3 +48,8 @@ Keep theme values in `src/ui/style.rs`.
 Check the main view at 1150 by 720 and 760 by 480 logical pixels.
 Check one widget row at 300 by 160 logical pixels and three rows at 300 by 304 logical pixels.
 Keep review captures outside the repository.
+
+Calendar accepts drag selection on empty space. A preview shows the selected range before the form opens.
+A click prepares an entry at that time. Start now is a separate action that uses the current time.
+Day blocks shows cards by date without an hour grid or clock labels. It does not split duration entries.
+The weekly progress bar remains. The native week-glass control is removed.

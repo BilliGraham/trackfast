@@ -1,6 +1,10 @@
 mod actions;
 mod calendar;
+mod calendar_input;
+mod day_blocks;
 mod digits;
+mod entry;
+mod progress;
 mod projects;
 mod settings;
 mod style;
@@ -13,7 +17,7 @@ use jiff::Timestamp;
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
 
-use crate::entries::{BEGINNING_OF_WEEK, Session, Snapshot, Task, summary, week};
+use crate::entries::{BEGINNING_OF_WEEK, Session, Snapshot, Task, summary};
 use crate::model::{Action, Drafts, Screen, State, TimerView};
 
 const NO_PROJECT: Color32 = Color32::from_rgb(110, 110, 110);
@@ -51,6 +55,14 @@ impl Clock {
 pub fn shell(ui: &mut egui::Ui, state: &State, drafts: &mut Drafts, clock: &Clock) -> Vec<Action> {
     style::apply(ui);
     let mut actions = Vec::new();
+    if drafts.entry.is_none()
+        && drafts.delete_entry.is_none()
+        && !state.saving
+        && state.data.is_some()
+        && ui.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::N))
+    {
+        actions.push(Action::EditEntry(None));
+    }
     egui::Panel::left("navigation")
         .exact_size(172.0)
         .resizable(false)
@@ -79,11 +91,12 @@ pub fn shell(ui: &mut egui::Ui, state: &State, drafts: &mut Drafts, clock: &Cloc
                 return;
             };
             match state.screen {
-                Screen::Timer => timer(ui, state, data, clock, &mut actions),
+                Screen::Timer => timer(ui, state, data, drafts, clock, &mut actions),
                 Screen::Projects => projects::show(ui, state, data, drafts, &mut actions),
                 Screen::Settings => settings::show(ui, state, drafts, &mut actions),
             }
         });
+    entry::show(ui.ctx(), state, drafts, &mut actions);
     actions
 }
 
@@ -123,11 +136,15 @@ fn timer(
     ui: &mut egui::Ui,
     state: &State,
     data: &Snapshot,
+    drafts: &mut Drafts,
     clock: &Clock,
     actions: &mut Vec<Action>,
 ) {
     ui.horizontal(|ui| {
         ui.heading("Timer");
+        if ui.button("Add entry").clicked() {
+            actions.push(Action::EditEntry(None));
+        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let (label, action) = if state.widget_open {
                 ("Close widget", Action::CloseWidget)
@@ -147,16 +164,18 @@ fn timer(
     let shown_week = state.calendar.week.unwrap_or(current_week);
     ui.horizontal(|ui| {
         match state.timer_view {
-            TimerView::Calendar => {
-                calendar::navigator(ui, shown_week, current_week, actions);
-                ui.add_space(16.0);
-                ui.weak("WEEK TOTAL");
-                duration(ui, &clock_or_zero(week_total(data, clock, shown_week)));
+            TimerView::Calendar | TimerView::DayBlocks => {
+                ui.scope(|ui| calendar::navigator(ui, shown_week, current_week, actions));
             }
             TimerView::List => {
                 let total = |date| {
-                    summary::start_of_day(date, &clock.tz)
-                        .map(|since| summary::total_since(&data.sessions, since, clock.now))
+                    Some(summary::total_dates(
+                        &data.sessions,
+                        date,
+                        today,
+                        &clock.tz,
+                        clock.now,
+                    ))
                 };
                 ui.weak("Today");
                 duration(ui, &clock_or_zero(total(today)));
@@ -168,7 +187,8 @@ fn timer(
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             for (view, label) in [
-                (TimerView::List, "List view"),
+                (TimerView::List, "List"),
+                (TimerView::DayBlocks, "Day blocks"),
                 (TimerView::Calendar, "Calendar"),
             ] {
                 if ui
@@ -181,20 +201,38 @@ fn timer(
         });
     });
     problem(ui, state);
+    if let Some(notice) = &state.notice {
+        ui.weak(notice);
+    }
+    progress::show(
+        ui,
+        data,
+        clock,
+        if state.timer_view != TimerView::List {
+            shown_week
+        } else {
+            current_week
+        },
+    );
     ui.add_space(12.0);
     match state.timer_view {
         TimerView::Calendar => calendar::show(ui, state, data, clock, shown_week, actions),
-        TimerView::List => entry_list(ui, data, clock, today, actions),
+        TimerView::DayBlocks => day_blocks::show(ui, data, clock, shown_week, actions),
+        TimerView::List => entry_list(ui, data, drafts, clock, today, actions),
     }
 }
 
 fn running_card(ui: &mut egui::Ui, data: &Snapshot, clock: &Clock) {
     let running: Vec<&Session> = data.running().collect();
+    if running.is_empty() && ui.available_width() < 700.0 {
+        ui.weak("No timer running. Add an entry to start a task or record completed work.");
+        return;
+    }
     style::card().inner_margin(16).show(ui, |ui| {
         ui.set_width(ui.available_width());
         if running.is_empty() {
             ui.label(RichText::new("No timer running").size(15.0));
-            ui.weak("Use the widget to start a task.");
+            ui.weak("Add an entry to start a task or record completed work.");
             return;
         }
         for session in running {
@@ -217,15 +255,10 @@ fn running_card(ui: &mut egui::Ui, data: &Snapshot, clock: &Clock) {
     });
 }
 
-fn week_total(data: &Snapshot, clock: &Clock, week_start: Date) -> Option<jiff::SignedDuration> {
-    let from = summary::start_of_day(week_start, &clock.tz)?;
-    let to = summary::start_of_day(week::shift(week_start, 1), &clock.tz)?;
-    (from >= data.loaded_from).then(|| week::total_between(&data.sessions, from, to, clock.now))
-}
-
 fn entry_list(
     ui: &mut egui::Ui,
     data: &Snapshot,
+    drafts: &mut Drafts,
     clock: &Clock,
     today: Date,
     actions: &mut Vec<Action>,
@@ -235,7 +268,7 @@ fn entry_list(
     if days.is_empty() {
         ui.add_space(42.0);
         ui.label(RichText::new("No time tracked yet").size(16.0));
-        ui.label("Open the widget and add a task to start a timer.");
+        ui.label("Add a completed entry or open the widget to start a timer.");
         return;
     }
     egui::ScrollArea::vertical()
@@ -252,7 +285,7 @@ fn entry_list(
                 ui.add_space(4.0);
                 for session in day.entries {
                     ui.push_id(session.id, |ui| {
-                        entry_row(ui, data, session, clock, actions)
+                        entry_row(ui, data, session, drafts, clock, actions)
                     });
                 }
             }
@@ -271,6 +304,7 @@ fn entry_row(
     ui: &mut egui::Ui,
     data: &Snapshot,
     session: &Session,
+    drafts: &mut Drafts,
     clock: &Clock,
     actions: &mut Vec<Action>,
 ) {
@@ -280,9 +314,23 @@ fn entry_row(
         ui.set_width(ui.available_width());
         right_aligned_row(ui, |ui| {
             self::actions::menu(ui, "Entry actions", |ui| {
-                continue_action(ui, data, session, actions)
+                continue_action(ui, data, session, actions);
+                if ui
+                    .add_enabled(!session.is_running(), egui::Button::new("Edit entry"))
+                    .clicked()
+                {
+                    actions.push(Action::EditEntry(Some(session.id)));
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(!session.is_running(), egui::Button::new("Delete entry"))
+                    .clicked()
+                {
+                    drafts.delete_entry = Some(session.id);
+                    ui.close();
+                }
             });
-            duration(ui, &summary::clock(session.elapsed(clock.now)));
+            duration(ui, &summary::clock(session.effective(clock.now)));
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add(egui::Label::new(description(session)).truncate())
                     .on_hover_text(description(session));
@@ -293,7 +341,18 @@ fn entry_row(
                 Some(stop) => clock.local_time(stop),
                 None => "now".to_owned(),
             };
-            ui.weak(format!("{} – {end}", clock.local_time(session.start)));
+            if session.details.duration_seconds.is_some() {
+                ui.weak("Duration only");
+            } else {
+                ui.weak(format!("{} - {end}", clock.local_time(session.start)));
+            }
+            if session.details.round_to_five {
+                ui.weak(format!(
+                    "Recorded {}",
+                    summary::clock(session.elapsed(clock.now))
+                ))
+                .on_hover_text("The total uses the entry's saved five-minute rounding rule.");
+            }
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 project_label(ui, data, session.project_id);
             });
@@ -411,6 +470,7 @@ pub(crate) mod tests {
         let session = |id, start: &str, seconds: Option<i64>, project_id| {
             let start: Timestamp = start.parse().unwrap();
             Session {
+                details: Default::default(),
                 id,
                 description: "Review the calendar layout".into(),
                 project_id,
@@ -427,6 +487,7 @@ pub(crate) mod tests {
                 client_id: None,
                 archived: false,
             }],
+            settings: Default::default(),
             clients: Vec::new(),
             rows: vec![
                 WidgetRow {
@@ -509,5 +570,93 @@ pub(crate) mod tests {
         drafts.project = Some(crate::db::ProjectDraft::default());
         state.screen = Screen::Projects;
         draw(&ctx, &state, &mut drafts, 12.0);
+    }
+}
+
+#[cfg(test)]
+mod entry_label_tests {
+    use super::*;
+    #[test]
+    fn duration_rows_show_their_mode_and_preserved_recorded_time() {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(style::fonts());
+        let now = "2026-10-26T12:00:00Z".parse().unwrap();
+        let clock = Clock {
+            now,
+            tz: TimeZone::UTC,
+        };
+        let mut session = tests::sample_snapshot().sessions[1].clone();
+        session.details.duration_seconds = Some(780);
+        session.details.round_to_five = true;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            entry_row(
+                ui,
+                &Snapshot::default(),
+                &session,
+                &mut Drafts::default(),
+                &clock,
+                &mut Vec::new(),
+            )
+        });
+        let text = output
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Text(t) => Some(t.galley.text()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        output.textures_delta.clear();
+        assert!(text.contains("Duration only"), "{text}");
+        assert!(text.contains("Recorded 0:13:00"), "{text}");
+    }
+}
+
+#[cfg(test)]
+mod day_view_tests {
+    use super::*;
+    #[test]
+    fn day_blocks_show_durations_without_clock_ranges() {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(style::fonts());
+        let state = State {
+            timer_view: TimerView::DayBlocks,
+            data: Some(tests::sample_snapshot()),
+            ..Default::default()
+        };
+        let mut drafts = Drafts::default();
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1150.0, 720.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                shell(
+                    ui,
+                    &state,
+                    &mut drafts,
+                    &Clock {
+                        now: "2026-10-16T13:00:00Z".parse().unwrap(),
+                        tz: TimeZone::UTC,
+                    },
+                );
+            },
+        );
+        let text = output
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Text(t) => Some(t.galley.text()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        output.textures_delta.clear();
+        assert!(text.contains("Add duration"), "{text}");
+        assert!(!text.contains("AM") && !text.contains("PM"));
     }
 }

@@ -27,7 +27,7 @@ The separate phase 3 queue also leaves this runtime unchanged. See [the queue de
 3. No view changes application state while it draws.
 
 Text fields are the one exception. egui needs a mutable buffer for text input,
-so the application gives the views a `Drafts` value. The application reads and clears a draft when it acts on it.
+so the application gives the views a `Drafts` value. Entry and settings drafts remain until the worker confirms a successful save.
 
 The widget is a second native viewport in the same process. Both windows read the same `State`.
 Closing the widget does not close the main window.
@@ -56,6 +56,7 @@ The file is `trackfast.db` in the local data folder of the user. WAL mode and fo
 | `clients` | Client names. Names are unique. |
 | `projects` | Name, `#rrggbb` colour, optional client, and archived flag. |
 | `sessions` | Description, optional project, start, and stop in UTC seconds. A null stop means the session runs. |
+| `local_settings` | Rounding for new entries, weekly target hours, and the visual indicator. |
 | `widget_rows` | Up to three tasks, their order, and the running session of each row. |
 
 `clients`, `projects`, and `sessions` have a unique `toggl_id` column for imported rows.
@@ -64,6 +65,11 @@ The file is `trackfast.db` in the local data folder of the user. WAL mode and fo
 `MIGRATIONS` in `src/db/mod.rs` lists one SQL step for each version. All pending steps run in one transaction.
 Never edit a released step. Add a new step, so that existing files upgrade in place.
 The app refuses a file with a newer schema version than it knows.
+
+Migration 2 adds optional duration seconds, a saved entry date and time zone, and the applied rounding rule to sessions.
+Duration entries use a midnight timestamp as a storage index only. They do not occupy the calendar hour grid.
+Existing and imported entries keep exact totals. New entries capture the current rounding rule.
+The worker saves manual entries, deletion, and settings in separate transactions.
 
 Pause sets the stop time of the session and clears the session of the row in one transaction.
 A session under one second is deleted instead of kept.

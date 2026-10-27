@@ -64,8 +64,40 @@ pub fn show(
     let (Some(week_from), Some(week_to)) = (bounds[0], bounds[7]) else {
         return;
     };
-    project_bar(ui, snapshot, week_from, week_to, clock.now);
+    if ui.available_width() >= 700.0 {
+        project_bar(ui, snapshot, week_from, week_to, clock);
+    }
     ui.add_space(10.0);
+    let durations: Vec<_> = snapshot
+        .sessions
+        .iter()
+        .filter(|s| {
+            s.details.duration_seconds.is_some()
+                && s.date(&clock.tz) >= shown
+                && s.date(&clock.tz) < week::shift(shown, 1)
+        })
+        .collect();
+    if !durations.is_empty() {
+        egui::CollapsingHeader::new(format!("Duration entries ({})", durations.len()))
+            .default_open(ui.available_width() >= 700.0)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("duration-entries")
+                    .max_height(100.0)
+                    .show(ui, |ui| {
+                        for entry in durations {
+                            ui.horizontal(|ui| {
+                                ui.weak(entry.date(&clock.tz).strftime("%a %-d %b").to_string());
+                                if ui.button(super::description(entry)).clicked() {
+                                    actions.push(Action::EditEntry(Some(entry.id)));
+                                }
+                                super::duration(ui, &summary::clock(entry.effective(clock.now)));
+                                super::project_label(ui, snapshot, entry.project_id);
+                            });
+                        }
+                    });
+            });
+    }
     header(ui, state, snapshot, clock, &days, &bounds, actions);
     let loaded = week_from >= snapshot.loaded_from;
     let hour_height = state.calendar.hour_height();
@@ -100,6 +132,32 @@ pub fn show(
         let column_width = (rect.width() - GUTTER) / 7.0;
         for (index, day_blocks) in blocks.iter().enumerate() {
             let left = rect.left() + GUTTER + column_width * index as f32;
+            if loaded && !state.saving {
+                let over_entry =
+                    ui.input(|input| input.pointer.press_origin())
+                        .is_some_and(|origin| {
+                            origin.x >= left
+                                && origin.x < left + column_width
+                                && day_blocks.iter().any(|block| {
+                                    let top = rect.top() + block.start / 60.0 * hour_height;
+                                    let height = ((block.end - block.start) / 60.0 * hour_height)
+                                        .max(MIN_BLOCK_HEIGHT);
+                                    origin.y >= top && origin.y < top + height
+                                })
+                        });
+                if !over_entry {
+                    super::calendar_input::show(
+                        ui,
+                        Rect::from_min_max(
+                            pos2(left, rect.top()),
+                            pos2(left + column_width, rect.bottom()),
+                        ),
+                        days[index],
+                        clock,
+                        actions,
+                    );
+                }
+            }
             for block in day_blocks {
                 ui.push_id((days[index], block.entry.id), |ui| {
                     entry_block(
@@ -138,9 +196,9 @@ fn project_bar(
     snapshot: &Snapshot,
     from: Timestamp,
     to: Timestamp,
-    now: Timestamp,
+    clock: &Clock,
 ) {
-    let totals = week::project_totals(&snapshot.sessions, from, to, now);
+    let totals = week::project_totals(&snapshot.sessions, from, to, clock.now, &clock.tz);
     let sum: f64 = totals.iter().map(|(_, total)| total.as_secs_f64()).sum();
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
     let painter = ui.painter_at(rect);
@@ -226,6 +284,40 @@ fn header(
     let today = clock.today();
     for (index, day) in days.iter().enumerate() {
         let left = rect.left() + GUTTER + column_width * index as f32;
+        if column_width < 100.0 {
+            let centre = left + column_width / 2.0;
+            let colour = if *day == today {
+                style::ACCENT
+            } else {
+                style::TEXT
+            };
+            painter.text(
+                pos2(centre, rect.top() + 5.0),
+                Align2::CENTER_TOP,
+                day.strftime("%a %-d").to_string(),
+                FontId::proportional(11.0),
+                colour,
+            );
+            let total = match (bounds[index], bounds[index + 1]) {
+                (Some(from), Some(to)) => {
+                    week::total_between(&snapshot.sessions, from, to, clock.now, &clock.tz)
+                }
+                _ => jiff::SignedDuration::ZERO,
+            };
+            let text = format!(
+                "{}:{:02}",
+                total.as_secs() / 3600,
+                total.as_secs() / 60 % 60
+            );
+            painter.text(
+                pos2(centre, rect.top() + 26.0),
+                Align2::CENTER_TOP,
+                text,
+                FontId::proportional(11.0),
+                style::MUTED,
+            );
+            continue;
+        }
         let number_centre = pos2(left + 22.0, rect.center().y);
         let is_today = *day == today;
         if is_today {
@@ -251,7 +343,9 @@ fn header(
             },
         );
         let total = match (bounds[index], bounds[index + 1]) {
-            (Some(from), Some(to)) => week::total_between(&snapshot.sessions, from, to, clock.now),
+            (Some(from), Some(to)) => {
+                week::total_between(&snapshot.sessions, from, to, clock.now, &clock.tz)
+            }
             _ => jiff::SignedDuration::ZERO,
         };
         digits::paint(
@@ -345,7 +439,7 @@ fn entry_block(
     }
     let text_painter = ui.painter_at(text_rect.expand2(vec2(0.0, BLOCK_PADDING - 2.0)));
     let wrap = text_rect.width().max(1.0);
-    let duration = summary::clock(entry.elapsed(clock.now));
+    let duration = summary::clock(entry.effective(clock.now));
     let duration_font = digits::font(11.5);
     let duration_height = digits::size(ui.ctx(), &duration, &duration_font).y;
     let mut cursor = rect.top() + if height < 26.0 { 2.0 } else { BLOCK_PADDING };
@@ -391,12 +485,15 @@ fn entry_block(
     } else {
         clock.local_time(entry.start + entry.elapsed(clock.now))
     };
-    ui.interact(
+    let entry_response = ui.interact(
         rect,
         ui.id().with(("entry", entry.start, block.start as i32)),
-        Sense::hover(),
-    )
-    .on_hover_ui(|ui| {
+        Sense::click(),
+    );
+    if entry_response.clicked() && !entry.is_running() {
+        actions.push(Action::EditEntry(Some(entry.id)));
+    }
+    entry_response.on_hover_ui(|ui| {
         ui.strong(description(entry));
         if let Some(project) = project {
             ui.colored_label(colour, &project.name);
@@ -428,6 +525,13 @@ fn entry_block(
             ui.spacing_mut().interact_size = menu_rect.size();
             super::actions::menu_on_hover(ui, "Entry actions", rect, |ui| {
                 continue_action(ui, snapshot, entry, actions);
+                if ui
+                    .add_enabled(!entry.is_running(), egui::Button::new("Edit entry"))
+                    .clicked()
+                {
+                    actions.push(Action::EditEntry(Some(entry.id)));
+                    ui.close();
+                }
             });
         },
     );
@@ -477,6 +581,7 @@ mod tests {
     fn snapshot(rows: usize) -> Snapshot {
         let sessions: Vec<crate::entries::Session> = (1..=4)
             .map(|id| crate::entries::Session {
+                details: Default::default(),
                 id,
                 description: format!("Task {id}"),
                 project_id: None,

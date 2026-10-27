@@ -26,18 +26,18 @@ pub fn start_of_day(date: Date, tz: &TimeZone) -> Option<Timestamp> {
 /// Groups entries by the local date on which they started, newest day first.
 pub fn days<'a>(entries: &'a [Session], tz: &TimeZone, now: Timestamp) -> Vec<Day<'a>> {
     let mut sorted: Vec<&Session> = entries.iter().collect();
-    sorted.sort_by_key(|entry| std::cmp::Reverse(entry.start));
+    sorted.sort_by_key(|entry| std::cmp::Reverse((entry.date(tz), entry.start)));
     let mut days: Vec<Day> = Vec::new();
     for entry in sorted {
-        let date = entry.start.to_zoned(tz.clone()).date();
+        let date = entry.date(tz);
         match days.last_mut() {
             Some(day) if day.date == date => {
-                day.total += entry.elapsed(now);
+                day.total += entry.effective(now);
                 day.entries.push(entry);
             }
             _ => days.push(Day {
                 date,
-                total: entry.elapsed(now),
+                total: entry.effective(now),
                 entries: vec![entry],
             }),
         }
@@ -45,13 +45,19 @@ pub fn days<'a>(entries: &'a [Session], tz: &TimeZone, now: Timestamp) -> Vec<Da
     days
 }
 
-/// Sums entries that started at or after `since`.
-pub fn total_since(entries: &[Session], since: Timestamp, now: Timestamp) -> SignedDuration {
+/// Sums entries by their saved dates, including both bounds.
+pub fn total_dates(
+    entries: &[Session],
+    from: Date,
+    to: Date,
+    tz: &TimeZone,
+    now: Timestamp,
+) -> SignedDuration {
     entries
         .iter()
-        .filter(|entry| entry.start >= since)
+        .filter(|entry| entry.date(tz) >= from && entry.date(tz) <= to)
         .fold(SignedDuration::ZERO, |total, entry| {
-            total + entry.elapsed(now)
+            total + entry.effective(now)
         })
 }
 
@@ -73,6 +79,7 @@ mod tests {
     fn entry(start: &str, seconds: i64) -> Session {
         let start: Timestamp = start.parse().unwrap();
         Session {
+            details: Default::default(),
             id: start.as_second(),
             project_id: None,
             description: String::new(),
@@ -117,7 +124,17 @@ mod tests {
             entry("2026-10-12T08:00:00Z", 900),
         ];
         let since: Timestamp = "2026-10-13T00:00:00Z".parse().unwrap();
-        assert_eq!(total_since(&entries, since, now).as_secs(), 4500);
+        assert_eq!(
+            total_dates(
+                &entries,
+                since.to_zoned(TimeZone::UTC).date(),
+                now.to_zoned(TimeZone::UTC).date(),
+                &TimeZone::UTC,
+                now
+            )
+            .as_secs(),
+            4500
+        );
     }
 
     #[test]

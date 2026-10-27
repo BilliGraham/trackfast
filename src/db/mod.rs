@@ -1,5 +1,6 @@
 //! The local SQLite store. Only the database worker thread calls this module.
 
+mod local;
 pub mod worker;
 
 use std::path::{Path, PathBuf};
@@ -11,7 +12,8 @@ use crate::entries::{Client, MAX_ROWS, Project, Session, Snapshot, Task, WidgetR
 
 /// Each step upgrades the schema by one version. Never edit a released step.
 /// Add a new step instead, so that existing files upgrade in place.
-const MIGRATIONS: &[&str] = &[r"
+const MIGRATIONS: &[&str] = &[
+    r"
     CREATE TABLE clients (
         id INTEGER PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
@@ -41,7 +43,9 @@ const MIGRATIONS: &[&str] = &[r"
         project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
         session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL
     );
-"];
+",
+    include_str!("002_local.sql"),
+];
 
 const RECENT_TASKS: i64 = 20;
 
@@ -63,6 +67,10 @@ impl From<rusqlite::Error> for Error {
 type Result<T> = std::result::Result<T, Error>;
 
 pub fn default_path() -> Option<PathBuf> {
+    #[cfg(debug_assertions)]
+    if let Some(path) = std::env::var_os("TRACKFAST_REVIEW_DATABASE") {
+        return Some(PathBuf::from(path));
+    }
     dirs::data_local_dir().map(|dir| dir.join("trackfast").join("trackfast.db"))
 }
 
@@ -329,21 +337,22 @@ impl Store {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         let sessions = connection
             .prepare(
-                "SELECT id, description, project_id, start_utc, stop_utc FROM sessions
-                 WHERE start_utc >= ?1 OR stop_utc IS NULL ORDER BY start_utc DESC",
+                "SELECT id, description, project_id, start_utc, stop_utc, duration_seconds, entry_date, time_zone, round_to_five FROM sessions
+                 WHERE start_utc >= ?1 OR entry_date >= ?2 OR stop_utc IS NULL ORDER BY start_utc DESC",
             )?
-            .query_map([seconds(loaded_from)], read_session)?
+            .query_map(params![seconds(loaded_from),loaded_from.to_zoned(jiff::tz::TimeZone::system()).date().to_string()], read_session)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         let rows = connection
             .prepare(
                 "SELECT r.id, r.description, r.project_id,
-                        s.id, s.description, s.project_id, s.start_utc, s.stop_utc
+                        s.id, s.description, s.project_id, s.start_utc, s.stop_utc, s.duration_seconds, s.entry_date, s.time_zone, s.round_to_five
                  FROM widget_rows r LEFT JOIN sessions s ON s.id = r.session_id
                  ORDER BY r.position",
             )?
             .query_map([], |row| {
                 let session = match row.get::<_, Option<i64>>(3)? {
                     Some(id) => Some(Session {
+                        details: read_details(row, 8)?,
                         id,
                         description: row.get(4)?,
                         project_id: row.get(5)?,
@@ -376,6 +385,7 @@ impl Store {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(Snapshot {
+            settings: self.settings()?,
             projects,
             clients,
             rows,
@@ -388,6 +398,7 @@ impl Store {
 
 fn read_session(row: &rusqlite::Row) -> rusqlite::Result<Session> {
     Ok(Session {
+        details: read_details(row, 5)?,
         id: row.get(0)?,
         description: row.get(1)?,
         project_id: row.get(2)?,
@@ -398,8 +409,8 @@ fn read_session(row: &rusqlite::Row) -> rusqlite::Result<Session> {
 
 fn start_session(transaction: &Transaction, task: &Task, at: Timestamp) -> Result<i64> {
     transaction.execute(
-        "INSERT INTO sessions (description, project_id, start_utc) VALUES (?1, ?2, ?3)",
-        params![task.description, task.project_id, seconds(at)],
+        "INSERT INTO sessions (description, project_id, start_utc, round_to_five, entry_date, time_zone) VALUES (?1, ?2, ?3, (SELECT round_to_five FROM local_settings WHERE id=1), ?4, ?5)",
+        params![task.description, task.project_id, seconds(at), at.to_zoned(jiff::tz::TimeZone::system()).date().to_string(), jiff::tz::TimeZone::system().iana_name()],
     )?;
     Ok(transaction.last_insert_rowid())
 }
@@ -448,6 +459,29 @@ fn stop_row(transaction: &Transaction, row: i64, at: Timestamp) -> Result<()> {
     }
     Ok(())
 }
+
+fn read_details(
+    row: &rusqlite::Row,
+    offset: usize,
+) -> rusqlite::Result<crate::entries::EntryDetails> {
+    let date: Option<String> = row.get(offset + 1)?;
+    let entry_date = date.map(|s| s.parse()).transpose().map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            offset + 1,
+            rusqlite::types::Type::Text,
+            Box::new(e),
+        )
+    })?;
+    Ok(crate::entries::EntryDetails {
+        duration_seconds: row.get(offset)?,
+        entry_date,
+        time_zone: row.get(offset + 2)?,
+        round_to_five: row.get(offset + 3)?,
+    })
+}
+
+#[cfg(test)]
+mod refinement_tests;
 
 #[cfg(test)]
 mod tests {

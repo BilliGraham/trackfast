@@ -74,6 +74,9 @@ pub fn day_blocks<'a>(
     let mut blocks: Vec<Block> = entries
         .iter()
         .filter_map(|entry| {
+            if entry.details.duration_seconds.is_some() {
+                return None;
+            }
             let end = entry_end(entry, now);
             let starts_today = entry.start >= day_start && entry.start < day_end;
             let crosses_today = entry.start < day_start && end > day_start;
@@ -140,8 +143,9 @@ pub fn total_between(
     from: Timestamp,
     to: Timestamp,
     now: Timestamp,
+    tz: &TimeZone,
 ) -> SignedDuration {
-    project_totals(entries, from, to, now)
+    project_totals(entries, from, to, now, tz)
         .into_iter()
         .fold(SignedDuration::ZERO, |sum, (_, total)| sum + total)
 }
@@ -152,13 +156,14 @@ pub fn project_totals(
     from: Timestamp,
     to: Timestamp,
     now: Timestamp,
+    tz: &TimeZone,
 ) -> Vec<(Option<i64>, SignedDuration)> {
     let mut totals: Vec<(Option<i64>, SignedDuration)> = Vec::new();
-    for entry in entries
-        .iter()
-        .filter(|entry| entry.start >= from && entry.start < to)
-    {
-        let elapsed = entry.elapsed(now);
+    for entry in entries.iter().filter(|entry| {
+        entry.date(tz) >= from.to_zoned(tz.clone()).date()
+            && entry.date(tz) < to.to_zoned(tz.clone()).date()
+    }) {
+        let elapsed = entry.effective(now);
         match totals
             .iter_mut()
             .find(|(project, _)| *project == entry.project_id)
@@ -179,6 +184,7 @@ mod tests {
     fn entry(start: &str, seconds: i64) -> Session {
         let start: Timestamp = start.parse().unwrap();
         Session {
+            details: Default::default(),
             id: start.as_second(),
             project_id: None,
             description: String::new(),
@@ -275,6 +281,7 @@ mod tests {
             "2026-10-12T00:00:00Z".parse().unwrap(),
             "2026-10-19T00:00:00Z".parse().unwrap(),
             NOW.parse().unwrap(),
+            &TimeZone::UTC,
         );
         assert_eq!(
             totals,

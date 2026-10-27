@@ -26,7 +26,11 @@ Phase 2 API and app prerequisites remain incomplete. The queue does not connect 
 Review the open decisions in api-contract.md before implementing dependent behaviour.
 The user approved half-interval ties rounding up, visible zero totals without export, and setting changes for new entries only.
 Personal settings and duration rounding now work in the API. New accounts default to five minutes, 35 weekly hours, and the progress indicator.
-Existing entries retain their applied rounding interval. The native settings screen is not connected yet.
+Existing entries retain their applied rounding interval. The native app now has independent local settings and both entry modes.
+The local app also has saved drafts during writes, entry correction, weekly targets, and a progress bar.
+Calendar drag selection and a separate Day blocks view now support direct entry creation.
+The native glass indicator was removed after user review.
+See local-refinement.md for the phase 2B changes and validation. The native app remains separate from the API.
 Timed entries now use their start date in a saved time zone. Project membership checks and project pagination now work in the API.
 Project administration, entry-list pagination, and the matching client workflows remain unfinished.
 Calendar-based holiday and leave adjustments are later work. Keep the configurable base target separate from calculated weekly adjustments.

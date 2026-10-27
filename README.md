@@ -14,17 +14,22 @@ The queue can create, edit, and delete duration entries through the local develo
 It checks account identity and responses, preserves retry keys, and retains conflicts for explicit resolution.
 The desktop app still uses its existing local database.
 The API now has [personal settings](docs/settings.md) for rounding, the weekly target, and the visual indicator.
-Defaults are five-minute rounding, 35 hours per week, and the progress indicator. The native settings interface is not connected yet.
+Defaults are five-minute rounding, 35 hours per week, and the progress indicator. The native app has separate local settings with the same defaults.
 The API also has [saved time zones and project access checks](docs/timed-projects.md), with private, paginated project lists.
 
 ## Current scope
 
 - A widget that runs up to three tasks at the same time, each with a play and pause button.
-- A Timer screen with the running tasks, a Calendar view, and a List view.
+- A Timer screen with running tasks, a Calendar view, Day blocks, and a List view.
 - The Calendar view shows one week on an hour grid, with day totals, a week total, and project shares.
 - The List view groups the sessions since the start of last week by day.
 - A Projects screen to create, edit, archive, and restore projects with a colour and an optional client.
+- Completed timed entries and duration-only entries, with editing and deletion.
+- Local rounding, weekly targets, and a weekly progress bar.
 - A Settings screen with an optional, one-time import from Toggl.
+
+See [local entries and settings](docs/local-refinement.md) for the entry rules and keyboard controls.
+The entry form expands to fit its fields and action buttons without an internal scroll area.
 
 ## Widget
 
@@ -99,7 +104,7 @@ See [the timer guide](docs/timer.md).
 ## Planned work
 
 - A weekly export of time by project and client, for upload to Xero.
-- Editing and deleting past sessions.
+- Connect the native app after the remaining API and queue prerequisites pass their checks.
 
 ## Fonts
 

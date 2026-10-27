@@ -13,6 +13,7 @@ pub const BEGINNING_OF_WEEK: u8 = 1;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Session {
+    pub details: EntryDetails,
     pub id: i64,
     pub description: String,
     pub project_id: Option<i64>,
@@ -21,12 +22,52 @@ pub struct Session {
     pub stop: Option<Timestamp>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EntryDetails {
+    pub duration_seconds: Option<i64>,
+    pub entry_date: Option<jiff::civil::Date>,
+    pub time_zone: Option<String>,
+    pub round_to_five: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Settings {
+    pub round_to_five: bool,
+    pub weekly_target_hours: f64,
+    pub glass: bool,
+}
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            round_to_five: true,
+            weekly_target_hours: 35.0,
+            glass: false,
+        }
+    }
+}
 impl Session {
+    pub fn date(&self, tz: &jiff::tz::TimeZone) -> jiff::civil::Date {
+        self.details
+            .entry_date
+            .unwrap_or_else(|| self.start.to_zoned(tz.clone()).date())
+    }
+    pub fn effective(&self, now: Timestamp) -> SignedDuration {
+        let seconds = self.elapsed(now).as_secs();
+        if self.details.round_to_five && !self.is_running() {
+            SignedDuration::from_secs((seconds / 300 + i64::from(seconds % 300 >= 150)) * 300)
+        } else {
+            SignedDuration::from_secs(seconds)
+        }
+    }
+
     pub fn is_running(&self) -> bool {
         self.stop.is_none()
     }
 
     pub fn elapsed(&self, now: Timestamp) -> SignedDuration {
+        if let Some(seconds) = self.details.duration_seconds {
+            return SignedDuration::from_secs(seconds);
+        }
         self.stop
             .unwrap_or(now)
             .duration_since(self.start)
@@ -68,6 +109,7 @@ pub struct WidgetRow {
 /// Everything the views need, loaded in one read.
 #[derive(Clone, Debug, Default)]
 pub struct Snapshot {
+    pub settings: Settings,
     pub projects: Vec<Project>,
     pub clients: Vec<Client>,
     pub rows: Vec<WidgetRow>,
@@ -105,7 +147,7 @@ impl Snapshot {
                     && session.project_id == task.project_id
             })
             .fold(SignedDuration::ZERO, |total, session| {
-                total + session.elapsed(now)
+                total + session.effective(now)
             })
     }
 }
@@ -116,6 +158,7 @@ mod tests {
 
     fn session(start: &str, stop: Option<&str>) -> Session {
         Session {
+            details: Default::default(),
             id: 1,
             description: "Review".into(),
             project_id: Some(3),
