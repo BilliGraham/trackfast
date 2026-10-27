@@ -6,6 +6,9 @@ use uuid::Uuid;
 
 mod entry;
 mod remote;
+mod resolution;
+pub mod scheduler;
+pub use resolution::Conflict;
 pub mod session;
 pub mod transport;
 
@@ -14,6 +17,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_queue.sql"),
     include_str!("../migrations/002_changes.sql"),
     include_str!("../migrations/003_remote.sql"),
+    include_str!("../migrations/004_schedule.sql"),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,6 +65,7 @@ pub enum Error {
     IncompatibleDatabase,
     PendingOperation,
     UnknownEntry,
+    ConflictChanged,
 }
 
 fn storage<E>(_: E) -> Error {
@@ -80,6 +85,7 @@ impl std::fmt::Display for Error {
                 "Confirm or resolve the pending operation before another change."
             }
             Self::UnknownEntry => "The confirmed local entry is unavailable.",
+            Self::ConflictChanged => "The conflict changed. Review its current remote version.",
         })
     }
 }
@@ -92,27 +98,6 @@ pub struct Queue {
 }
 
 impl Queue {
-    /// Use only after the user reviews the current remote version and chooses local work.
-    pub fn resolve_with_local(
-        &mut self,
-        operation_id: Uuid,
-        remote_version: i64,
-    ) -> Result<Uuid, Error> {
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(storage)?;
-        let previous: Option<i64> = tx.query_row("SELECT expected_version FROM pending WHERE operation_id=?1 AND conflict=1 AND action IN ('replace','delete')", [operation_id.to_string()], |r| r.get(0)).optional().map_err(storage)?;
-        let previous = previous.ok_or(Error::UnknownOperation)?;
-        if remote_version <= previous || remote_version == i64::MAX {
-            return Err(Error::UnknownOperation);
-        }
-        let key = Uuid::new_v4();
-        tx.execute("UPDATE pending SET operation_id=?2,expected_version=?3,conflict=0 WHERE operation_id=?1", params![operation_id.to_string(),key.to_string(),remote_version]).map_err(storage)?;
-        tx.commit().map_err(storage)?;
-        Ok(key)
-    }
-
     fn mark_conflict(&mut self, operation_id: Uuid) -> Result<(), Error> {
         self.connection
             .execute(
@@ -369,5 +354,7 @@ fn validate(entry: &DurationEntry) -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(test)]
+mod reliability_tests;
 #[cfg(test)]
 mod tests;

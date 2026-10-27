@@ -399,6 +399,7 @@ fn http_server(responses: Vec<(u16, String)>) -> (String, std::thread::JoinHandl
                 );
                 std::thread::sleep(Duration::from_millis(10));
             };
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();

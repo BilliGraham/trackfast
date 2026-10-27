@@ -20,6 +20,7 @@ Only one pending operation is allowed per entry. A further edit waits for confir
 An edit immediately saves its local values. A pending deletion retains the local entry until server confirmation.
 Migration 2 adds versions, deletion records, and conflict state. It preserves pending work from migration 1.
 Migration 3 adds a remote checkpoint and retained remote conflicts. Old entry bodies decode with no project or timing fields.
+Migration 4 adds persistent retry deadlines and pause state.
 
 The caller must run database and HTTP work on a worker thread.
 The library starts no worker and has no interface dependency.
@@ -41,7 +42,7 @@ A deletion requires the expected successful no-content response for that request
 
 Failed authentication, invalid responses, conflicts, timeouts, and server errors keep pending work.
 A sync pass stops at its first failure. Earlier confirmed operations remain confirmed.
-The caller controls retry timing. There is no automatic retry loop or background scheduler yet.
+The caller can use the optional scheduled worker. See [sync recovery](sync-recovery.md) for retry rules and explicit recovery actions.
 
 ## Conflict handling
 
@@ -51,7 +52,8 @@ After the user chooses the local values, the caller can use `Queue::resolve_with
 This explicit action creates a new operation key and updates the expected version.
 If another client changes the entry again, the next request conflicts again.
 There is no automatic overwrite, merge, or native conflict dialog yet.
-Creation conflicts and remotely deleted entries remain pending for a later recovery workflow.
+The caller can also accept the reviewed remote copy or preserve local content as a new entry.
+These choices support creation collisions and remote deletions. See [sync recovery](sync-recovery.md).
 
 ## Checks
 
@@ -82,9 +84,8 @@ macOS and visual checks did not run. The interface did not change.
 ## Remaining work
 
 1. Add the native sign-in interface after agreement on the app connection scope. The live Rust session check passed on Windows.
-2. Add scheduled retries and the remaining conflict choices, including explicit acceptance of a remote deletion.
-3. Agree on offline recording-time setting snapshots before connecting the native database worker and interface.
-4. Add Xero exports and restricted PM reports before the pilot.
+2. Agree on offline recording-time setting snapshots before connecting the native database worker and interface.
+3. Add Xero exports and restricted PM reports before the pilot.
 
 The approved rounding and date policies are recorded in `api-contract.md`.
 Remote entry reads expose the original duration, effective duration, and applied interval.
@@ -94,14 +95,14 @@ This development adapter does not export to Xero or change export states.
 
 `list_entries` and `list_projects` return bounded pages. Follow their next cursors with unchanged filters and limits.
 `pull_changes` retrieves one page of up to 100 entry changes and returns whether another page is available.
-Call it again while more pages exist. Call it later to retrieve further changes. There is no scheduler in the library.
+Call it again while more pages exist. The optional worker schedules these calls and limits each cycle to one page.
 The client checks identity, response size, entry ownership, timed fields, and calculated totals before applying a page.
 
 The queue saves the page and checkpoint in one SQLite transaction. A failed write retains the previous checkpoint.
 Changes to confirmed entries replace the local confirmed copy. Remote deletions retain an ID record that prevents reuse.
 Changes to entries with pending work retain both copies. `remote_conflict` exposes the remote copy or deletion for review.
 A later successful receipt cannot discard a newer remote version already received through the feed.
-The queue does not yet provide an accept-remote conflict action. Pending work remains available until explicit resolution.
+The queue provides explicit local, remote, and copy-as-new choices. Pending work remains available until explicit resolution.
 
 See [retrieval and project administration](retrieval-admin.md) for the endpoint rules and validation record.
 

@@ -119,7 +119,8 @@ cargo test --locked --manifest-path sync-client/Cargo.toml native_vault_roundtri
 The live Google-to-API check is recorded in [API sessions](api-sessions.md).
 That earlier check used the Python tool. The subsequent live Rust check also passed on Windows.
 The client currently accepts only canonical loopback HTTP addresses. Shared deployment and HTTPS configuration remain later work.
-The native sign-in interface, retry scheduling, and remaining conflict choices also remain later work.
+The separate client now provides [scheduled retries and explicit conflict choices](sync-recovery.md).
+The native sign-in interface remains later work.
 
 ## Live Rust check
 

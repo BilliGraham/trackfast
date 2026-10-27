@@ -65,6 +65,20 @@ impl Queue {
             if version.is_some_and(|v| v >= change.version) {
                 continue;
             }
+            let stored: Option<String> = tx
+                .query_row(
+                    "SELECT body FROM remote_conflicts WHERE entry_id=?1",
+                    [&id],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(storage)?;
+            if let Some(stored) = stored {
+                let stored: RemoteChange = serde_json::from_str(&stored).map_err(storage)?;
+                if stored.version >= change.version {
+                    continue;
+                }
+            }
             let pending: bool = tx
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM pending WHERE entry_id=?1)",

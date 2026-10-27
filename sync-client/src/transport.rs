@@ -7,6 +7,7 @@ use std::{net::SocketAddr, time::Duration};
 #[derive(Debug)]
 pub enum SyncError {
     Unavailable,
+    RateLimited { retry_after_seconds: Option<u64> },
     InvalidConfiguration,
     IdentityMismatch,
     Authentication,
@@ -20,6 +21,55 @@ pub enum SyncError {
 mod tests {
     use super::*;
     use uuid::Uuid;
+
+    #[test]
+    fn a_missing_update_requires_conflict_review_not_an_assumed_deletion() {
+        assert!(mutation_conflict(404, "replace"));
+        assert!(mutation_conflict(404, "delete"));
+        assert!(!mutation_conflict(404, "create"));
+        assert!(!mutation_conflict(422, "replace"));
+    }
+
+    #[test]
+    fn retry_after_headers_support_seconds_and_http_dates() {
+        let response = ureq::http::Response::builder()
+            .status(429)
+            .header("retry-after", "120")
+            .body(())
+            .unwrap();
+        assert!(matches!(
+            check_response(&response, 200),
+            Err(SyncError::RateLimited {
+                retry_after_seconds: Some(120)
+            })
+        ));
+        let now = chrono::DateTime::parse_from_rfc2822("Wed, 21 Oct 2015 07:27:00 GMT")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        assert_eq!(
+            retry_after(Some("Wed, 21 Oct 2015 07:28:00 GMT"), now),
+            Some(60)
+        );
+        assert_eq!(
+            retry_after(Some("Wed, 21 Oct 2015 07:26:00 GMT"), now),
+            Some(0)
+        );
+        assert_eq!(retry_after(Some("invalid"), now), None);
+        assert_eq!(
+            retry_after(
+                Some("Wed, 21 Oct 2015 07:28:00 GMT"),
+                now + chrono::Duration::nanoseconds(999_999_999)
+            ),
+            Some(60)
+        );
+        assert_eq!(
+            retry_after(
+                Some("Wed, 21 Oct 2015 07:28:00 GMT"),
+                now + chrono::Duration::milliseconds(500)
+            ),
+            Some(60)
+        );
+    }
 
     #[test]
     fn forbidden_response_does_not_request_token_renewal() {
@@ -102,7 +152,7 @@ impl DevelopmentClient {
             .header("authorization", &self.authorization)
             .call()
             .map_err(|_| SyncError::Unavailable)?;
-        check_status(response.status().as_u16(), 200)?;
+        check_response(&response, 200)?;
         let etag = response
             .headers()
             .get("etag")
@@ -173,7 +223,7 @@ impl DevelopmentClient {
             .header("authorization", &self.authorization)
             .call()
             .map_err(|_| SyncError::Unavailable)?;
-        check_status(identity.status().as_u16(), 200)?;
+        check_response(&identity, 200)?;
         let identity: Value = identity
             .body_mut()
             .with_config()
@@ -187,12 +237,28 @@ impl DevelopmentClient {
     }
 
     pub fn sync(&self, queue: &mut Queue) -> Result<usize, SyncError> {
+        self.sync_batch(queue, usize::MAX)
+    }
+
+    /// Sends at most `limit` pending operations. The limit must be positive.
+    pub fn sync_batch(&self, queue: &mut Queue, limit: usize) -> Result<usize, SyncError> {
+        if limit == 0 {
+            return Err(SyncError::InvalidConfiguration);
+        }
         if queue.scope != self.scope {
             return Err(SyncError::IdentityMismatch);
         }
+        if queue.has_conflicts().map_err(|_| SyncError::Storage)? {
+            return Err(SyncError::Conflict);
+        }
         self.check_identity()?;
         let mut confirmed = 0;
-        for pending in queue.pending().map_err(|_| SyncError::Storage)? {
+        for pending in queue
+            .pending()
+            .map_err(|_| SyncError::Storage)?
+            .into_iter()
+            .take(limit)
+        {
             let entry = &pending.entry;
             let body = entry.request();
             let (action, expected) = queue
@@ -233,12 +299,13 @@ impl DevelopmentClient {
                 "replace" => 200,
                 _ => 204,
             };
-            if response.status().as_u16() == 412 {
+            if mutation_conflict(response.status().as_u16(), &action) {
                 queue
                     .mark_conflict(pending.operation_id)
                     .map_err(|_| SyncError::Storage)?;
+                return Err(SyncError::Conflict);
             }
-            check_status(response.status().as_u16(), status)?;
+            check_response(&response, status)?;
             if action == "delete" {
                 queue
                     .confirm(pending.operation_id)
@@ -302,6 +369,33 @@ fn checked_rounding(receipt: &Value, original: u64) -> Result<(u64, Option<u8>),
     Ok((effective, interval))
 }
 
+fn mutation_conflict(status: u16, action: &str) -> bool {
+    matches!(status, 409 | 412) || (status == 404 && action != "create")
+}
+fn retry_after(value: Option<&str>, now: chrono::DateTime<chrono::Utc>) -> Option<u64> {
+    let value = value?.trim();
+    if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
+        return Some(value.parse().unwrap_or(u64::MAX));
+    }
+    let date = chrono::DateTime::parse_from_rfc2822(value).ok()?;
+    let delay = date.signed_duration_since(now);
+    let seconds = delay.num_seconds().max(0);
+    Some(seconds as u64 + u64::from(delay > chrono::Duration::seconds(seconds)))
+}
+fn check_response<T>(response: &ureq::http::Response<T>, expected: u16) -> Result<(), SyncError> {
+    if response.status().as_u16() == 429 {
+        return Err(SyncError::RateLimited {
+            retry_after_seconds: retry_after(
+                response
+                    .headers()
+                    .get("retry-after")
+                    .and_then(|v| v.to_str().ok()),
+                chrono::Utc::now(),
+            ),
+        });
+    }
+    check_status(response.status().as_u16(), expected)
+}
 fn check_status(status: u16, expected: u16) -> Result<(), SyncError> {
     if status == expected {
         return Ok(());
@@ -310,7 +404,10 @@ fn check_status(status: u16, expected: u16) -> Result<(), SyncError> {
         401 => SyncError::Authentication,
         409 | 412 => SyncError::Conflict,
         400 | 403 | 404 | 422 | 428 => SyncError::Rejected,
-        429 | 500..=599 => SyncError::Unavailable,
+        429 => SyncError::RateLimited {
+            retry_after_seconds: None,
+        },
+        500..=599 => SyncError::Unavailable,
         _ => SyncError::InvalidReceipt,
     })
 }
@@ -319,6 +416,9 @@ impl std::fmt::Display for SyncError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::Unavailable => "The API is unavailable. Local work remains pending.",
+            Self::RateLimited { .. } => {
+                "The API rate limit requires a delay. Local work remains pending."
+            }
             Self::InvalidConfiguration => "Check the local API address and development token.",
             Self::IdentityMismatch => "The API account does not match this queue.",
             Self::Authentication => "The API did not accept the credentials.",

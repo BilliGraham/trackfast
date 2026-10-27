@@ -32,7 +32,7 @@ impl DevelopmentClient {
             .header("authorization", &self.authorization)
             .call()
             .map_err(|_| SyncError::Unavailable)?;
-        check_status(response.status().as_u16(), 200)?;
+        check_response(&response, 200)?;
         response
             .body_mut()
             .with_config()

@@ -34,7 +34,8 @@ See local-refinement.md for the phase 2B changes and validation. The native app 
 Timed entries now use their start date in a saved time zone. Project membership checks and project pagination now work in the API.
 The queue now supports timed entries and project assignments. Entry-list pagination, ordered remote changes, and project administration now work.
 The queue retains remote conflicts and checkpoints across restarts. See retrieval-admin.md.
-Shared deployment, scheduled retries, remaining conflict choices, and native connection work remain unfinished.
+Scheduled retries and explicit conflict choices now exist in the separate sync client. See [sync recovery](sync-recovery.md).
+Shared deployment and native connection work remain unfinished.
 Calendar-based holiday and leave adjustments are later work. Keep the configurable base target separate from calculated weekly adjustments.
 The pilot will use Google sign-in with an explicit approved-user list. Google will not host Trackfast data.
 Workspace membership is not assumed. An isolated registration check is available in google-signin.md.

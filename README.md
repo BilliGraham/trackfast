@@ -13,6 +13,7 @@ Phase 3 starts with a separate [durable operation queue](docs/sync-client.md).
 The queue can create, edit, and delete timed and duration entries with optional projects through the local development API.
 It can retrieve entry pages, assigned projects, and ordered remote changes, including deletions.
 It checks account identity and responses, preserves retry keys, and retains conflicts for explicit resolution.
+The optional [sync worker](docs/sync-recovery.md) schedules retries and supports reviewed conflict choices.
 The desktop app still uses its existing local database.
 An isolated [Google sign-in check](docs/google-signin.md) can validate the pilot registration. The separate API session check is described in [API sessions](docs/api-sessions.md).
 The API now has [personal settings](docs/settings.md) for rounding, the weekly target, and the visual indicator.

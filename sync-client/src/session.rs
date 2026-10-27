@@ -310,6 +310,13 @@ impl SessionClient {
         self.engine.action(|client| client.check_identity())
     }
     pub fn sync(&mut self, queue: &mut Queue) -> Result<usize, SessionError> {
+        self.sync_batch(queue, usize::MAX)
+    }
+    /// Sends at most `limit` operations, including requests after session renewal.
+    pub fn sync_batch(&mut self, queue: &mut Queue, limit: usize) -> Result<usize, SessionError> {
+        if limit == 0 {
+            return Err(SessionError::InvalidConfiguration);
+        }
         if queue.scope != self.engine.scope {
             return Err(SessionError::IdentityMismatch);
         }
@@ -317,7 +324,15 @@ impl SessionClient {
             .pending()
             .map_err(|_| SessionError::Sync(SyncError::Storage))?
             .len();
-        self.engine.action(|client| client.sync(queue))?;
+        self.engine.action(|client| {
+            let current = queue.pending().map_err(|_| SyncError::Storage)?.len();
+            let remaining = limit.saturating_sub(before - current);
+            if remaining == 0 {
+                Ok(0)
+            } else {
+                client.sync_batch(queue, remaining)
+            }
+        })?;
         let after = queue
             .pending()
             .map_err(|_| SessionError::Sync(SyncError::Storage))?

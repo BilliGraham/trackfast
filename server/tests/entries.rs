@@ -9,6 +9,9 @@ use tower::ServiceExt;
 use trackfast_api::{AppState, router};
 use uuid::Uuid;
 
+#[path = "cases/conflict_resolution.rs"]
+mod conflict_resolution;
+
 #[path = "cases/sessions.rs"]
 mod sessions;
 
