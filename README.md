@@ -2,13 +2,13 @@
 
 Trackfast is a native Rust and egui time tracker for one person on one computer.
 Its design is inspired by Toggl Track. It is not a Toggl client and uses no Toggl branding.
-The native app stores its data in local SQLite. It has no account connection or hosted backend.
+The native app stores its data in local SQLite. An optional [pilot account connection](docs/native-account.md) supports Google sign-in to the local API.
 The target product has a shared API and a polished native reference client.
 Phase 1 defines [the API contract](docs/api-contract.md) and [delivery roadmap](docs/roadmap.md).
 The app remains local while the API develops. Internal teams can later build other clients against the same API.
 The GitHub repository is BilliGraham/trackfast. The user selected public visibility.
 The separate [development API](docs/server.md) stores completed timed and duration-only entries in Postgres.
-It supports local development credentials or Google pilot sessions. The desktop app is not connected to it.
+It supports local development credentials or Google pilot sessions. The desktop account can connect to it. Time entries remain local.
 Phase 3 starts with a separate [durable operation queue](docs/sync-client.md).
 The queue can create, edit, and delete timed and duration entries with optional projects through the local development API.
 It can retrieve entry pages, assigned projects, and ordered remote changes, including deletions.

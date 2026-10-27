@@ -83,7 +83,7 @@ macOS and visual checks did not run. The interface did not change.
 
 ## Remaining work
 
-1. Add the native sign-in interface after agreement on the app connection scope. The live Rust session check passed on Windows.
+1. Complete the live [native account check](native-account.md). The sign-in interface is implemented.
 2. Connect the native worker with captured rounding and an explicit first-connection boundary. Only work recorded after that boundary enters sync.
 3. Add Xero exports and restricted PM reports before the pilot.
 

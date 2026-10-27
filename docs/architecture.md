@@ -3,11 +3,13 @@
 This document describes the current local app.
 See [the roadmap](roadmap.md) and [API contract](api-contract.md) for the target architecture.
 Phase 1 does not change the runtime or database schema described here.
-The separate phase 3 queue also leaves this runtime unchanged. See [the queue design](sync-client.md).
+The separate phase 3 queue leaves the local time-data flow unchanged. See [the queue design](sync-client.md).
+The optional [native account worker](native-account.md) connects sign-in independently of the database worker.
 
 | Module | Responsibility |
 | --- | --- |
 | `src/main.rs` | Start the native window, select the theme, and install the fonts. |
+| `src/account.rs`, `src/account/oauth.rs` | Run native account restoration, Google sign-in, and sign-out outside the interface thread. |
 | `src/app.rs` | Apply actions, send database commands, receive events, and manage the widget viewport. |
 | `src/model.rs` | Hold interface state, text drafts, and action types. |
 | `src/entries/mod.rs` | Define sessions, projects, clients, widget rows, and the snapshot that the views read. |
@@ -89,6 +91,6 @@ See `docs/toggl-import.md`.
 | rusqlite | SQLite access. The `bundled` feature compiles SQLite into the app. |
 | dirs | The local data folder of the user. |
 | jiff | Time zones, local dates, and RFC 3339 times. |
-| ureq | Blocking HTTPS client with rustls, for the import only. |
+| ureq | Blocking HTTPS client with rustls, for the import and Google token exchange. |
 | serde | Decode Toggl JSON. |
 | base64 | Encode the basic authentication header for the import. |

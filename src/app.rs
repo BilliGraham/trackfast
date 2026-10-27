@@ -15,6 +15,7 @@ use crate::toggl::ApiToken;
 use crate::ui;
 
 pub struct App {
+    account: crate::account::Account,
     state: State,
     drafts: Drafts,
     database: Option<(Database, Events)>,
@@ -28,6 +29,7 @@ fn current_week(tz: &TimeZone) -> Date {
 
 impl App {
     pub fn new(ctx: egui::Context) -> Self {
+        let account = crate::account::Account::start(ctx.clone());
         let tz = TimeZone::system();
         let mut state = State::default();
         let loaded_from = summary::start_of_day(week::shift(current_week(&tz), -1), &tz)
@@ -41,6 +43,7 @@ impl App {
         };
         let default_import_from = week::shift(current_week(&tz), -12);
         Self {
+            account,
             state,
             drafts: Drafts {
                 import_from: default_import_from.to_string(),
@@ -65,6 +68,33 @@ impl App {
             self.state.problem = None;
         }
         match action {
+            Action::SignIn => {
+                if !self.state.account.status.busy()
+                    && self.state.account.status != crate::account::Status::Connected
+                {
+                    let secret = std::mem::take(&mut self.drafts.account_secret);
+                    ui::clear_secret_input(ctx);
+                    self.state.account.status = crate::account::Status::SigningIn;
+                    self.state.account.problem = None;
+                    self.account.send(crate::account::Command::SignIn(secret));
+                }
+            }
+            Action::CancelSignIn => self.account.cancel(),
+            Action::RestoreAccount => {
+                if !self.state.account.status.busy() {
+                    self.state.account.status = crate::account::Status::Checking;
+                    self.account.send(crate::account::Command::Restore);
+                }
+            }
+            Action::SignOut => {
+                if !self.state.account.status.busy() {
+                    use zeroize::Zeroize;
+                    self.drafts.account_secret.zeroize();
+                    ui::clear_secret_input(ctx);
+                    self.state.account.status = crate::account::Status::SigningOut;
+                    self.account.send(crate::account::Command::SignOut);
+                }
+            }
             Action::DraftEntry(draft) => {
                 if !self.state.saving && self.drafts.entry.is_none() {
                     self.drafts.entry = Some(*draft);
@@ -239,7 +269,17 @@ impl App {
         self.import = Some(import::start(token, from, database.clone(), ctx.clone()));
     }
 
-    fn receive(&mut self) {
+    fn receive(&mut self, ctx: &egui::Context) {
+        while let Some(event) = self.account.receive() {
+            match event {
+                crate::account::Event::State(view) => self.state.account = view,
+                crate::account::Event::Browser(url) => {
+                    if self.account.browser_allowed() {
+                        ctx.open_url(egui::OpenUrl::new_tab(url));
+                    }
+                }
+            }
+        }
         if let Some((_, events)) = &self.database {
             while let Some(event) = events.try_recv() {
                 match event {
@@ -302,7 +342,7 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.receive();
+        self.receive(ui.ctx());
         let clock = ui::Clock {
             now: Timestamp::now(),
             tz: TimeZone::system(),
@@ -342,5 +382,34 @@ impl eframe::App for App {
             }
         }
         self.schedule_repaint(ui.ctx());
+    }
+}
+
+#[cfg(test)]
+mod account_tests {
+    use super::*;
+
+    #[test]
+    fn signin_moves_the_secret_once_and_cancel_blocks_browser_launch() {
+        let (account, commands) = crate::account::Account::for_test();
+        let mut app = App {
+            account,
+            state: State::default(),
+            drafts: Drafts::default(),
+            database: None,
+            import: None,
+        };
+        app.state.account.status = crate::account::Status::SignedOut;
+        *app.drafts.account_secret = "synthetic-desktop-secret".into();
+        let ctx = egui::Context::default();
+        app.apply(Action::SignIn, &ctx);
+        app.apply(Action::SignIn, &ctx);
+        assert!(app.drafts.account_secret.is_empty());
+        assert!(
+            matches!(commands.try_recv().unwrap(),crate::account::Command::SignIn(secret) if secret.as_str()=="synthetic-desktop-secret")
+        );
+        assert!(commands.try_recv().is_err());
+        app.apply(Action::CancelSignIn, &ctx);
+        assert!(!app.account.browser_allowed());
     }
 }

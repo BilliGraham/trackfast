@@ -7,6 +7,7 @@ mod entry;
 mod progress;
 mod projects;
 mod settings;
+pub use settings::clear_secret_input;
 mod style;
 mod widget;
 

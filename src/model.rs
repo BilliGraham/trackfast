@@ -67,6 +67,7 @@ pub enum ImportState {
 
 #[derive(Default)]
 pub struct State {
+    pub account: crate::account::View,
     pub saving: bool,
     pub notice: Option<String>,
     pub screen: Screen,
@@ -83,6 +84,7 @@ pub struct State {
 /// mutable buffer. The app reads and clears a draft when it acts on it.
 #[derive(Default)]
 pub struct Drafts {
+    pub account_secret: zeroize::Zeroizing<String>,
     pub entry: Option<EntryDraft>,
     pub settings: Option<crate::entries::Settings>,
     pub delete_entry: Option<i64>,
@@ -93,6 +95,10 @@ pub struct Drafts {
 }
 
 pub enum Action {
+    SignIn,
+    CancelSignIn,
+    RestoreAccount,
+    SignOut,
     DraftEntry(Box<EntryDraft>),
     StartEntry,
     EditEntry(Option<i64>),

@@ -1,7 +1,7 @@
 # Client session handling
 
 `sync-client::session::SessionClient` provides reusable session handling for the local pilot API.
-It uses the existing queue transport. The native app remains separate and still uses local SQLite.
+It uses the existing queue transport. The native account now uses this client. Native time entries still use local SQLite.
 The client runs no background service. Call its methods from a worker thread.
 
 ## Public operations
@@ -120,7 +120,7 @@ The live Google-to-API check is recorded in [API sessions](api-sessions.md).
 That earlier check used the Python tool. The subsequent live Rust check also passed on Windows.
 The client currently accepts only canonical loopback HTTP addresses. Shared deployment and HTTPS configuration remain later work.
 The separate client now provides [scheduled retries and explicit conflict choices](sync-recovery.md).
-The native sign-in interface remains later work.
+The [native sign-in interface](native-account.md) now uses this client. Native time-entry sync remains later work.
 
 ## Live Rust check
 
