@@ -40,7 +40,8 @@ The pilot will use Google sign-in with an explicit approved-user list. Google wi
 Workspace membership is not assumed. An isolated registration check is available in google-signin.md.
 The local pilot API now supports Google identity, stored membership, expiring sessions, renewal, and revocation.
 See api-sessions.md. The native app remains separate.
-A live API session check, secure client token storage, shared hosting, and operational controls remain unfinished.
+The live API session check passed on Windows on October 27: sign-in, renewal with unchanged ownership, and sign-out all passed.
+Secure client token storage, shared hosting, and operational controls remain unfinished.
 Start phase 2A with duration-only entry creation, retrieval, replacement, and deletion.
 Do not connect the native app to HTTP during phase 1 or phase 2.
 

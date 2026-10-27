@@ -59,7 +59,8 @@ All six sign-in tests passed on Windows and Linux. All 29 Python checks passed o
 The Rust code did not change, so Rust checks were not repeated. macOS was not tested.
 The user completed a live Google check successfully on October 27, 2026.
 Signature, issuer, audience, token times, nonce, and the approved email all passed.
-The new API session flow still requires its own live browser check.
+The user also completed the separate API session check on Windows on October 27, 2026.
+API sign-in, renewal with unchanged ownership, and sign-out all passed. See [API sessions](api-sessions.md).
 
 The first live attempt returned an identity token, then failed verification. Its broad error did not identify the cause.
 The helper now reports fixed diagnostic messages for verification failures without printing private values.
