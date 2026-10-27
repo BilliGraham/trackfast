@@ -121,5 +121,39 @@ That earlier check used the Python tool. A live Google flow through this Rust cl
 The client currently accepts only canonical loopback HTTP addresses. Shared deployment and HTTPS configuration remain later work.
 The native sign-in interface, retry scheduling, and remaining conflict choices also remain later work.
 
+## Live Rust check
+
+Build the example, then run the Python browser helper from the repository root:
+
+```powershell
+cargo build --locked --manifest-path sync-client/Cargo.toml --example session_check
+& "$env:TEMP\trackfast-signin-venv\Scripts\python.exe" -B tools/rust_signin.py --client sync-client/target/debug/examples/session_check.exe --client-id YOUR_DESKTOP_CLIENT_ID --email YOUR_APPROVED_EMAIL --tenant YOUR_TENANT_UUID --person YOUR_PERSON_UUID
+```
+
+Use the existing membership IDs and local API configuration from [API sessions](api-sessions.md).
+On Linux, the executable is `sync-client/target/debug/examples/session_check`.
+The helper uses the same Python requirements as the earlier Google check.
+Enter the desktop client secret at its hidden prompt. Complete the browser sign-in with the approved account.
+The helper validates Google's response and passes the identity token through the Rust process's standard-input pipe.
+It never puts tokens in command arguments, files, or terminal output.
+
+The Rust example performs the API exchange and stores the refresh credential through `SessionClient`.
+It drops that client and opens a new client instance. The new instance restores the credential and renews the session.
+The check then signs out and checks that another client has no stored access.
+It does not create or change time entries or Xero records.
+The credential exists temporarily in the operating system store and is removed on success.
+
+If the check fails or stops after sign-in, repeat the helper command with `--cleanup`.
+Cleanup revokes and removes the stored session for that scope. It does not require Google sign-in.
+The normal check refuses to replace an existing session. Cleanup is an explicit separate operation.
+
+TDD checks failed before the Python bridge and Rust input reader existed.
+The bridge tests cover the private input pipe, invalid challenges, and private error output.
+A separate Windows test uses the real Rust executable and credential store with a synthetic local HTTP server.
+That test passed. It proves the bridge and storage flow, not live Google authorization.
+The Rust example passed formatting, Clippy, compilation, and its input test on Windows and Linux.
+All 33 regular queue tests passed on both platforms. The three Python bridge tests passed on Windows.
+The live result must be recorded after the user completes the browser check.
+
 References: [keyring credential stores](https://docs.rs/keyring/3.6.3/keyring/)
 and [Rust file locking](https://doc.rust-lang.org/std/fs/struct.File.html#method.try_lock).
