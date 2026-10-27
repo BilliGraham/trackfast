@@ -9,6 +9,9 @@ use tower::ServiceExt;
 use trackfast_api::{AppState, router};
 use uuid::Uuid;
 
+#[path = "cases/sessions.rs"]
+mod sessions;
+
 #[path = "cases/projects.rs"]
 mod projects;
 #[path = "cases/retrieval.rs"]

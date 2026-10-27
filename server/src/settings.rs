@@ -72,7 +72,7 @@ pub(crate) async fn read(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Reply, ApiError> {
-    let actor = state.actor(&headers)?;
+    let actor = state.actor(&headers).await?;
     let mut client = state.connect().await?;
     let tx = client.transaction().await.map_err(internal)?;
     let (version, data) = current(&tx, actor).await?;
@@ -85,7 +85,7 @@ pub(crate) async fn replace(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> Result<Reply, ApiError> {
-    let actor = state.actor(&headers)?;
+    let actor = state.actor(&headers).await?;
     let key = operation_key(&headers)?;
     let expected = precondition(&headers)?;
     let data = body(&bytes)?;

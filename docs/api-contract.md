@@ -88,9 +88,10 @@ Offline setting snapshots and Xero sub-minute remainders still require decisions
 | `PUT /v1/me/settings` | Replace personal settings with an If-Match precondition. |
 
 These endpoints form a proposed version 1 contract. The limited local implementation is not a deployed service.
-Use bearer access tokens. Select the production identity provider and token lifecycle before shared deployment.
-Google Workspace availability is unconfirmed. The local development adapter does not establish production membership.
-Validate token signature, issuer, audience, and expiry. Derive tenant and person from the verified identity.
+Use Trackfast bearer access tokens. Google pilot sessions now implement the initial identity and token lifecycle.
+Workspace membership is not assumed. Google mode uses explicit stored membership bound to verified Google subjects.
+Validate the Google token signature, issuer, audience, expiry, and server nonce during exchange.
+For API access, check the stored token hash, expiry, revocation, and enabled membership. Derive tenant and person from that membership.
 Do not trust a caller-supplied person ID, company domain, or role.
 Return 404 for an entry outside the caller's scope. Do not disclose whether another person owns that ID.
 Reject projects outside the caller's access and new time on archived projects with 422.
@@ -172,3 +173,10 @@ python -B -m unittest discover -s tools -p test_api_contract.py
 ```
 
 Use an isolated Python environment. These packages are test dependencies, not desktop runtime dependencies.
+
+## Google pilot sessions
+
+The API now supports Google sign-in with stored membership and expiring Trackfast sessions.
+Renewal, sign-out, and member disabling are available in a separate local mode.
+See [API sessions](api-sessions.md) for setup, endpoint rules, tests, and remaining limits.
+The native app remains on local storage. Shared hosting is not enabled.

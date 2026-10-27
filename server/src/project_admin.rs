@@ -55,7 +55,7 @@ pub(crate) async fn create(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> Result<Reply, ApiError> {
-    let actor = state.administrator(&headers)?;
+    let actor = state.administrator(&headers).await?;
     let (id, body) = body(&bytes, true)?;
     mutate(&state, actor, &headers, id.unwrap(), body, None).await
 }
@@ -65,7 +65,7 @@ pub(crate) async fn replace(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> Result<Reply, ApiError> {
-    let actor = state.administrator(&headers)?;
+    let actor = state.administrator(&headers).await?;
     let id = Uuid::parse_str(&id).map_err(|_| invalid())?;
     let (_, body) = body(&bytes, false)?;
     mutate(
@@ -94,13 +94,18 @@ async fn mutate(
     if let Some(reply) = crate::operations::replay(&tx, actor, key, &request).await? {
         return Ok(reply);
     }
-    if body.member_ids.iter().any(|person| {
-        !state
-            .credentials
-            .values()
-            .any(|a| a.tenant == actor.tenant && a.person == *person)
-    }) {
-        return Err(invalid());
+    for person in &body.member_ids {
+        let exists = if state.google.is_some() {
+            tx.query_opt("SELECT person_id FROM api_auth_members WHERE tenant_id=$1 AND person_id=$2 AND enabled", &[&actor.tenant,person]).await.map_err(internal)?.is_some()
+        } else {
+            state
+                .credentials
+                .values()
+                .any(|a| a.tenant == actor.tenant && a.person == *person)
+        };
+        if !exists {
+            return Err(invalid());
+        }
     }
     let row = tx
         .query_opt(
@@ -175,7 +180,7 @@ pub(crate) async fn read(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Reply, ApiError> {
-    let actor = state.administrator(&headers)?;
+    let actor = state.administrator(&headers).await?;
     let id = Uuid::parse_str(&id).map_err(|_| invalid())?;
     let mut client = state.connect().await?;
     let tx = client.transaction().await.map_err(internal)?;
@@ -200,7 +205,7 @@ pub(crate) async fn list(
     headers: HeaderMap,
     query: Result<Query<ListQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Reply, ApiError> {
-    let actor = state.administrator(&headers)?;
+    let actor = state.administrator(&headers).await?;
     let Query(query) = query.map_err(|_| invalid())?;
     let limit = pages::limit(query.limit)?;
     let filters = json!({"limit":limit});

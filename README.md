@@ -2,18 +2,19 @@
 
 Trackfast is a native Rust and egui time tracker for one person on one computer.
 Its design is inspired by Toggl Track. It is not a Toggl client and uses no Toggl branding.
-All data stays in a local SQLite file. Trackfast has no account, sync, or hosted backend.
+The native app stores its data in local SQLite. It has no account connection or hosted backend.
 The target product has a shared API and a polished native reference client.
 Phase 1 defines [the API contract](docs/api-contract.md) and [delivery roadmap](docs/roadmap.md).
 The app remains local while the API develops. Internal teams can later build other clients against the same API.
 The GitHub repository is BilliGraham/trackfast. The user selected public visibility.
 The separate [development API](docs/server.md) stores completed timed and duration-only entries in Postgres.
-It uses local development credentials. The desktop app is not connected to it.
+It supports local development credentials or Google pilot sessions. The desktop app is not connected to it.
 Phase 3 starts with a separate [durable operation queue](docs/sync-client.md).
 The queue can create, edit, and delete timed and duration entries with optional projects through the local development API.
 It can retrieve entry pages, assigned projects, and ordered remote changes, including deletions.
 It checks account identity and responses, preserves retry keys, and retains conflicts for explicit resolution.
 The desktop app still uses its existing local database.
+An isolated [Google sign-in check](docs/google-signin.md) can validate the pilot registration. The separate API session check is described in [API sessions](docs/api-sessions.md).
 The API now has [personal settings](docs/settings.md) for rounding, the weekly target, and the visual indicator.
 Defaults are five-minute rounding, 35 hours per week, and the progress indicator. The native app has separate local settings with the same defaults.
 The API also has [saved time zones and project access checks](docs/timed-projects.md), with private, paginated project lists.
@@ -119,3 +120,10 @@ Both fonts use the SIL Open Font License 1.1. The license files are next to the 
 - [Interface design](docs/interface.md)
 - [Toggl import rules](docs/toggl-import.md)
 - [Contribution guide and checks](CONTRIBUTING.md)
+
+## Google pilot sessions
+
+The API now supports Google sign-in with stored membership and expiring Trackfast sessions.
+Renewal, sign-out, and member disabling are available in a separate local mode.
+See [API sessions](docs/api-sessions.md) for setup, endpoint rules, tests, and remaining limits.
+The native app remains on local storage. Shared hosting is not enabled.

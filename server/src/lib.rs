@@ -1,3 +1,4 @@
+mod auth;
 mod changes;
 mod entries;
 mod operations;
@@ -26,6 +27,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/002_settings.sql"),
     include_str!("../migrations/003_projects.sql"),
     include_str!("../migrations/004_retrieval_admin.sql"),
+    include_str!("../migrations/005_auth.sql"),
 ];
 
 #[derive(Clone, Copy)]
@@ -39,6 +41,7 @@ pub struct AppState {
     config: Config,
     credentials: Arc<HashMap<[u8; 32], Actor>>,
     administrators: Arc<std::collections::HashSet<(Uuid, Uuid)>>,
+    google: Option<Arc<auth::Google>>,
 }
 
 impl AppState {
@@ -63,6 +66,7 @@ impl AppState {
             config,
             credentials: Arc::new(credentials),
             administrators: Default::default(),
+            google: None,
         }
     }
 
@@ -82,8 +86,20 @@ impl AppState {
         self
     }
 
-    fn administrator(&self, headers: &HeaderMap) -> Result<Actor, ApiError> {
-        let actor = self.actor(headers)?;
+    async fn administrator(&self, headers: &HeaderMap) -> Result<Actor, ApiError> {
+        if self.google.is_some() {
+            let (actor, administrator) = self.session_actor(bearer(headers)?).await?;
+            return if administrator {
+                Ok(actor)
+            } else {
+                Err(ApiError(
+                    StatusCode::FORBIDDEN,
+                    "forbidden",
+                    "Project administration is not permitted.",
+                ))
+            };
+        }
+        let actor = self.actor(headers).await?;
         if !self.administrators.contains(&(actor.tenant, actor.person)) {
             return Err(ApiError(
                 StatusCode::FORBIDDEN,
@@ -135,18 +151,28 @@ impl AppState {
         tx.commit().await.map_err(internal)
     }
 
-    fn actor(&self, headers: &HeaderMap) -> Result<Actor, ApiError> {
-        let token = headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.strip_prefix("Bearer "))
-            .ok_or_else(unauthenticated)?;
+    async fn actor(&self, headers: &HeaderMap) -> Result<Actor, ApiError> {
+        let token = bearer(headers)?;
+        if self.google.is_some() {
+            return self.session_actor(token).await.map(|(actor, _)| actor);
+        }
         let digest: [u8; 32] = Sha256::digest(token.as_bytes()).into();
         self.credentials
             .get(&digest)
             .copied()
             .ok_or_else(unauthenticated)
     }
+}
+
+fn bearer(headers: &HeaderMap) -> Result<&str, ApiError> {
+    if headers.get_all("authorization").iter().count() != 1 {
+        return Err(unauthenticated());
+    }
+    headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .ok_or_else(unauthenticated)
 }
 
 #[derive(Debug)]
@@ -164,6 +190,9 @@ impl IntoResponse for ApiError {
                 .headers_mut()
                 .insert("www-authenticate", "Bearer".parse().unwrap());
         }
+        response
+            .headers_mut()
+            .insert("cache-control", "no-store".parse().unwrap());
         response
     }
 }
@@ -238,7 +267,7 @@ async fn identity(
     axum::extract::State(state): axum::extract::State<AppState>,
     headers: HeaderMap,
 ) -> Result<Reply, ApiError> {
-    let actor = state.actor(&headers)?;
+    let actor = state.actor(&headers).await?;
     Ok(Reply {
         status: 200,
         body: Some(json!({"tenant_id":actor.tenant,"person_id":actor.person})),
@@ -249,6 +278,10 @@ async fn identity(
 
 pub fn router(state: AppState) -> Router {
     Router::new()
+        .route("/v1/auth/google/challenge", post(auth::challenge))
+        .route("/v1/auth/google/exchange", post(auth::exchange))
+        .route("/v1/auth/refresh", post(auth::refresh))
+        .route("/v1/auth/logout", post(auth::logout))
         .route("/v1/me", get(identity))
         .route("/v1/me/entry-changes", get(changes::list))
         .route(

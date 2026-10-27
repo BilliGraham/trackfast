@@ -49,6 +49,16 @@ class ApiContract(unittest.TestCase):
     def duration(self):
         return copy.deepcopy(next(c['value'] for c in self.cases if c['name'] == 'duration_create'))
 
+    def test_google_session_contract_rejects_client_assigned_roles(self):
+        for path in ['/v1/auth/google/challenge', '/v1/auth/google/exchange',
+                     '/v1/auth/refresh', '/v1/auth/logout']:
+            self.assertEqual(self.document['paths'][path]['post']['security'], [])
+        body = {'challenge_id': '00000000-0000-4000-8000-000000000001', 'id_token': 'signed-token'}
+        self.validator('GoogleExchange').validate(body)
+        for field in ['role', 'person_id', 'tenant_id', 'email']:
+            self.assertFalse(self.validator('GoogleExchange').is_valid({**body, field: 'admin'}))
+        self.assertFalse(self.validator('RefreshRequest').is_valid({'refresh_token': 'short'}))
+
     def test_change_feed_and_project_admin_contracts(self):
         self.assertIn('/v1/me/entry-changes', self.document['paths'])
         self.assertIn('/v1/admin/projects', self.document['paths'])

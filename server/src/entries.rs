@@ -110,7 +110,7 @@ pub(crate) async fn create(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> Result<Reply, ApiError> {
-    let actor = state.actor(&headers)?;
+    let actor = state.actor(&headers).await?;
     let (id, body) = entry_body(&bytes, true)?;
     mutate(
         &state,
@@ -130,7 +130,7 @@ pub(crate) async fn replace(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> Result<Reply, ApiError> {
-    let actor = state.actor(&headers)?;
+    let actor = state.actor(&headers).await?;
     let (_, body) = entry_body(&bytes, false)?;
     mutate(
         &state,
@@ -149,7 +149,7 @@ pub(crate) async fn delete(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Reply, ApiError> {
-    let actor = state.actor(&headers)?;
+    let actor = state.actor(&headers).await?;
     mutate(
         &state,
         actor,
@@ -268,7 +268,7 @@ pub(crate) async fn read(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Reply, ApiError> {
-    let actor = state.actor(&headers)?;
+    let actor = state.actor(&headers).await?;
     let id = parse_id(&id)?;
     let client = state.connect().await?;
     let row = client.query_opt("SELECT data,version FROM api_entries WHERE tenant_id=$1 AND person_id=$2 AND entry_id=$3 AND NOT deleted", &[&actor.tenant,&actor.person,&id]).await.map_err(internal)?.ok_or_else(missing)?;
@@ -294,7 +294,7 @@ pub(crate) async fn list(
     headers: HeaderMap,
     query: Result<Query<ListQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Reply, ApiError> {
-    let actor = state.actor(&headers)?;
+    let actor = state.actor(&headers).await?;
     let Query(query) = query.map_err(|_| invalid())?;
     let from = parse_date(&query.from_date)?;
     let to = parse_date(&query.to_date)?;

@@ -44,7 +44,8 @@ Supply credentials through your local environment. Do not commit them or paste t
 Use the same tenant and person IDs after restart to access the same entries.
 The service binds only to `127.0.0.1:8788`. It rejects non-loopback Postgres destinations.
 Local HTTP and the local Postgres connection do not use TLS. Do not expose this adapter through a proxy or tunnel.
-The fixed token adapter is not Google sign-in. Token renewal, expiry, revocation, and production membership checks remain unimplemented.
+These instructions select the fixed development adapter.
+For Google identity, stored membership, renewal, expiry, and revocation, use [Google pilot sessions](api-sessions.md).
 Requests and errors never print tokens, database connection strings, or provider response bodies.
 
 Run from the repository root:
@@ -61,7 +62,7 @@ The server implements personal settings, project listing, and explicit project a
 Project membership accepts only people configured in this tenant. The binary configures one person.
 Development test hosts can configure more credentials through `AppState::development`.
 The separate `sync-client/` library now uses this API. It checks the account before sending entries.
-The native app is not connected. Production identity remains unconfigured.
+The native app is not connected. Shared hosting remains a separate task.
 
 ## Storage and tests
 
@@ -103,3 +104,10 @@ Initial phase 2A validation on October 26, 2026:
 The disposable validation database was removed after these checks. No development service was left running.
 
 Production authentication, deployment, rate limiting, scheduled sync, and export jobs remain unimplemented.
+
+## Google pilot sessions
+
+The API now supports Google sign-in with stored membership and expiring Trackfast sessions.
+Renewal, sign-out, and member disabling are available in a separate local mode.
+See [API sessions](api-sessions.md) for setup, endpoint rules, tests, and remaining limits.
+The native app remains on local storage. Shared hosting is not enabled.

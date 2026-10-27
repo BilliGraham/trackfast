@@ -3,7 +3,7 @@
   "info": {
     "title": "Trackfast API",
     "version": "0.1.0-draft",
-    "description": "Trackfast API contract and local development implementation. Production identity and Xero exports remain separate phases. See docs/api-contract.md."
+    "description": "Trackfast API contract and local pilot implementation. Google sessions require explicit stored membership. Shared hosting and Xero exports remain separate work. See docs/api-contract.md."
   },
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "security": [
@@ -843,6 +843,153 @@
           }
         },
         "description": "Requires an explicit project-administrator grant. Membership must refer to configured people in this tenant. Archive or restore through PUT. No project deletion or access to personal entries is granted."
+      }
+    },
+    "/v1/auth/google/challenge": {
+      "post": {
+        "operationId": "googleChallenge",
+        "summary": "Create a single-use Google sign-in challenge.",
+        "security": [],
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success. Responses use Cache-Control: no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleChallenge"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/google/exchange": {
+      "post": {
+        "operationId": "googleExchange",
+        "summary": "Exchange a verified Google identity for a Trackfast session.",
+        "security": [],
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success. Responses use Cache-Control: no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionTokens"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleExchange"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "operationId": "refreshSession",
+        "summary": "Rotate the session tokens. Reuse revokes the session.",
+        "security": [],
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success. Responses use Cache-Control: no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionTokens"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "operationId": "logoutSession",
+        "summary": "Revoke the session using its refresh token.",
+        "security": [],
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "204": {
+            "description": "Success. Responses use Cache-Control: no-store."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -1696,6 +1843,96 @@
           "next_cursor",
           "has_more"
         ]
+      },
+      "GoogleChallenge": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "challenge_id",
+          "nonce",
+          "expires_in"
+        ],
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nonce": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "expires_in": {
+            "const": 300
+          }
+        }
+      },
+      "GoogleExchange": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "challenge_id",
+          "id_token"
+        ],
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "id_token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12288,
+            "writeOnly": true
+          }
+        }
+      },
+      "RefreshRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "refresh_token"
+        ],
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "writeOnly": true
+          }
+        }
+      },
+      "SessionTokens": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "access_token",
+          "refresh_token",
+          "token_type",
+          "expires_in"
+        ],
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "writeOnly": true
+          },
+          "refresh_token": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "writeOnly": true
+          },
+          "token_type": {
+            "const": "Bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 900
+          }
+        }
       }
     },
     "parameters": {

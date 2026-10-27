@@ -60,7 +60,7 @@ pub(crate) async fn list(
     headers: HeaderMap,
     query: Result<Query<ListQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Reply, ApiError> {
-    let actor = state.actor(&headers)?;
+    let actor = state.actor(&headers).await?;
     let Query(query) = query.map_err(|_| invalid_page())?;
     let limit = i64::from(query.limit.unwrap_or(50));
     if !(1..=100).contains(&limit) {

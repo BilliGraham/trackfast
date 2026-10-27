@@ -63,7 +63,7 @@ pub(crate) async fn list(
     headers: HeaderMap,
     query: Result<Query<ChangeQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Reply, ApiError> {
-    let actor = state.actor(&headers)?;
+    let actor = state.actor(&headers).await?;
     let Query(query) = query.map_err(|_| invalid())?;
     let limit = pages::limit(query.limit)?;
     let filters = json!({"limit":limit});
