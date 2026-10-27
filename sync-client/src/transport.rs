@@ -22,6 +22,15 @@ mod tests {
     use uuid::Uuid;
 
     #[test]
+    fn forbidden_response_does_not_request_token_renewal() {
+        assert!(matches!(check_status(403, 200), Err(SyncError::Rejected)));
+        assert!(matches!(
+            check_status(401, 200),
+            Err(SyncError::Authentication)
+        ));
+    }
+
+    #[test]
     fn receipt_rounding_accepts_exact_and_rounded_totals_and_rejects_false_totals() {
         for (original, interval, effective) in [
             (781, Value::Null, 781),
@@ -157,7 +166,7 @@ impl DevelopmentClient {
         })
     }
 
-    fn check_identity(&self) -> Result<(), SyncError> {
+    pub(crate) fn check_identity(&self) -> Result<(), SyncError> {
         let mut identity = self
             .agent
             .get(format!("{}/v1/me", self.scope.server))
@@ -298,9 +307,9 @@ fn check_status(status: u16, expected: u16) -> Result<(), SyncError> {
         return Ok(());
     }
     Err(match status {
-        401 | 403 => SyncError::Authentication,
+        401 => SyncError::Authentication,
         409 | 412 => SyncError::Conflict,
-        400 | 404 | 422 | 428 => SyncError::Rejected,
+        400 | 403 | 404 | 422 | 428 => SyncError::Rejected,
         429 | 500..=599 => SyncError::Unavailable,
         _ => SyncError::InvalidReceipt,
     })

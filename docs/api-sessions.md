@@ -119,6 +119,7 @@ The API accepted the approved Google identity. Renewal preserved the tenant and 
 The check saved no Google or session credentials and changed no time entries or Xero records.
 This result covers one approved account on the local pilot. It does not verify shared deployment or live access between different accounts.
 Automated tests do not prove deployment security. Before shared access, add TLS, abuse controls, operational monitoring, and a reviewed membership administration process.
-Secure client token storage and the native sign-in interface remain later work.
+The separate Rust client now has [secure token storage and session recovery](client-sessions.md).
+The native sign-in interface remains later work.
 References: [Google OpenID Connect](https://developers.google.com/identity/openid-connect/openid-connect)
 and [jsonwebtoken](https://docs.rs/jsonwebtoken/10.4.0/jsonwebtoken/).

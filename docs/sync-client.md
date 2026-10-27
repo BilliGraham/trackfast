@@ -81,7 +81,7 @@ macOS and visual checks did not run. The interface did not change.
 
 ## Remaining work
 
-1. Select and configure production identity. Google Workspace availability is unconfirmed.
+1. Complete a live Google flow through the Rust session client before connecting the native sign-in interface.
 2. Add scheduled retries and the remaining conflict choices, including explicit acceptance of a remote deletion.
 3. Agree on offline recording-time setting snapshots before connecting the native database worker and interface.
 4. Add Xero exports and restricted PM reports before the pilot.
@@ -104,3 +104,10 @@ A later successful receipt cannot discard a newer remote version already receive
 The queue does not yet provide an accept-remote conflict action. Pending work remains available until explicit resolution.
 
 See [retrieval and project administration](retrieval-admin.md) for the endpoint rules and validation record.
+
+## Google pilot sessions
+
+`session::SessionClient` adds secure refresh storage, automatic renewal before operations, and sign-out cleanup.
+It wraps the existing loopback transport and keeps all queue receipt checks.
+See [client sessions](client-sessions.md) for its public methods, platform requirements, and failure recovery.
+The original `DevelopmentClient` still accepts an in-memory token for development tests.

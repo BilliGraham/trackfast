@@ -127,3 +127,7 @@ The API now supports Google sign-in with stored membership and expiring Trackfas
 Renewal, sign-out, and member disabling are available in a separate local mode.
 See [API sessions](docs/api-sessions.md) for setup, endpoint rules, tests, and remaining limits.
 The native app remains on local storage. Shared hosting is not enabled.
+
+The separate queue client now has [secure session handling](docs/client-sessions.md).
+It stores refresh credentials in the operating system credential store and supports renewal, restart recovery, and sign-out cleanup.
+The native app is not connected to this client yet.

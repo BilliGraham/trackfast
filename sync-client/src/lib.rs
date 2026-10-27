@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 mod entry;
 mod remote;
+pub mod session;
 pub mod transport;
 
 const APPLICATION_ID: i32 = 0x54465351;
