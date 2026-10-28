@@ -19,7 +19,8 @@ pub struct Transfer {
 }
 
 impl Queue {
-    /// Stages an immutable native operation. Returns true only after its verified receipt.
+    /// Stages an immutable native operation. Returns true after a verified receipt or a saved reviewed resolution.
+    /// Call `native_resolution` before acknowledging the result in the native store.
     /// Repeated transfers must have the same content and operation ID.
     pub fn stage_transfer(&mut self, transfer: &Transfer) -> Result<bool, Error> {
         if transfer.operation_id.is_nil() || transfer.entry_id.is_nil() {

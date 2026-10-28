@@ -15,6 +15,12 @@ pub struct Page<T> {
     pub next_cursor: Option<Uuid>,
 }
 
+pub struct ChangePage {
+    pub changes: Vec<RemoteChange>,
+    pub cursor: Uuid,
+    pub more: bool,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Project {
     pub project_id: Uuid,
@@ -129,6 +135,14 @@ impl DevelopmentClient {
             return Err(SyncError::IdentityMismatch);
         }
         let previous = queue.checkpoint().map_err(|_| SyncError::Storage)?;
+        let page = self.read_changes(previous)?;
+        queue
+            .apply_remote_page(previous, page.cursor, &page.changes)
+            .map_err(|_| SyncError::Storage)?;
+        Ok(page.more)
+    }
+
+    pub fn read_changes(&self, previous: Option<Uuid>) -> Result<ChangePage, SyncError> {
         let value = self.get_page(&format!(
             "/v1/me/entry-changes?limit=100{}",
             cursor_query(previous)
@@ -170,10 +184,11 @@ impl DevelopmentClient {
                 })
             })
             .collect::<Result<Vec<_>, SyncError>>()?;
-        queue
-            .apply_remote_page(previous, next, &changes)
-            .map_err(|_| SyncError::Storage)?;
-        Ok(more)
+        Ok(ChangePage {
+            changes,
+            cursor: next,
+            more,
+        })
     }
 }
 

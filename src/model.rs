@@ -67,6 +67,8 @@ pub enum ImportState {
 
 #[derive(Default)]
 pub struct State {
+    pub conflict_busy: bool,
+    pub conflict_review: Option<(trackfast_sync::Scope, Vec<trackfast_sync::Conflict>, bool)>,
     pub delivery_active: bool,
     pub delivery_message: Option<String>,
     pub setup_busy: bool,
@@ -104,6 +106,8 @@ pub struct Drafts {
 }
 
 pub enum Action {
+    ReviewConflicts,
+    ResolveConflict(uuid::Uuid, i64, trackfast_sync::native_resolution::Choice),
     StartDelivery,
     StopDelivery,
     SyncSetup(crate::account::SetupRequest),

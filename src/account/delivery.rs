@@ -10,8 +10,86 @@ pub(super) struct Delivery {
     queue: Option<Queue>,
     last_operation: Option<uuid::Uuid>,
     resume: bool,
+    review_cursor: Option<uuid::Uuid>,
 }
 impl Delivery {
+    fn open_queue(&mut self, scope: &Scope) -> Result<&mut Queue, String> {
+        if self.queue.is_none() {
+            let path = crate::db::default_path()
+                .ok_or("The local data folder is unavailable.")?
+                .with_file_name("native-sync-queue.db");
+            self.queue = Some(Queue::open(&path, scope).map_err(|e| e.to_string())?);
+        }
+        Ok(self.queue.as_mut().unwrap())
+    }
+
+    pub fn review(
+        &mut self,
+        config: &Config,
+        client: &mut Option<SessionClient>,
+        scope: &Scope,
+        notify: &impl Fn(Event),
+    ) {
+        self.stop(notify);
+        let result = (|| -> Result<(), String> {
+            if scope != &config.scope() {
+                return Err("The conflict account does not match this connection.".into());
+            }
+            restore(client, config).map_err(|e| e.to_string())?;
+            let cursor = self.review_cursor;
+            let queue = self.open_queue(scope)?;
+            if queue
+                .native_conflicts()
+                .map_err(|e| e.to_string())?
+                .is_empty()
+            {
+                notify(Event::Conflicts(scope.clone(), vec![], false));
+                return Ok(());
+            }
+            let page = client
+                .as_mut()
+                .unwrap()
+                .read_changes(cursor)
+                .map_err(|e| e.to_string())?;
+            queue
+                .record_native_conflicts(&page.changes)
+                .map_err(|e| e.to_string())?;
+            let conflicts = queue.native_conflicts().map_err(|e| e.to_string())?;
+            self.review_cursor = page.more.then_some(page.cursor);
+            notify(Event::Conflicts(scope.clone(), conflicts, page.more));
+            Ok(())
+        })();
+        if let Err(error) = result {
+            self.review_cursor = None;
+            notify(Event::ConflictError(error));
+        }
+    }
+
+    pub fn resolve(
+        &mut self,
+        config: &Config,
+        scope: &Scope,
+        operation: uuid::Uuid,
+        version: i64,
+        choice: trackfast_sync::native_resolution::Choice,
+        notify: &impl Fn(Event),
+    ) {
+        self.stop(notify);
+        let result = (|| -> Result<(), String> {
+            if scope != &config.scope() || self.review_cursor.is_some() {
+                return Err("Finish loading the conflict before choosing a version.".into());
+            }
+            self.open_queue(scope)?
+                .resolve_native(operation, version, choice)
+                .map_err(|e| e.to_string())?;
+            notify(Event::Conflicts(scope.clone(), vec![], false));
+            self.start(notify);
+            Ok(())
+        })();
+        if let Err(error) = result {
+            notify(Event::ConflictError(error));
+        }
+    }
     pub fn start(&mut self, notify: &impl Fn(Event)) {
         self.active = true;
         self.resume = true;
@@ -89,7 +167,7 @@ impl Delivery {
                             "Sign in again before restarting delivery."
                         }
                         scheduler::Pause::Conflict => {
-                            "The API entry changed. Conflict review is not available in the native app yet."
+                            "The API entry changed. Select Review conflicts in Settings."
                         }
                         scheduler::Pause::Rejected => {
                             "The API rejected a pending change. That change needs review."
@@ -119,10 +197,21 @@ impl Delivery {
                 }
             }
             self.waiting = true;
-            notify(Event::ConfirmDelivery(scope.clone(), transfer.operation_id));
+            if let Some(resolution) = queue
+                .native_resolution(transfer.operation_id)
+                .map_err(|e| e.to_string())?
+            {
+                notify(Event::ApplyResolution(
+                    scope.clone(),
+                    transfer.operation_id,
+                    Box::new(resolution),
+                ));
+            } else {
+                notify(Event::ConfirmDelivery(scope.clone(), transfer.operation_id));
+            }
             notify(Event::DeliveryState(
                 true,
-                "The API confirmed a change. Saving its receipt locally...".into(),
+                "Saving the confirmed result locally...".into(),
             ));
             Ok(())
         })();

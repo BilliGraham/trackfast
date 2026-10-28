@@ -68,6 +68,26 @@ impl App {
             self.state.problem = None;
         }
         match action {
+            Action::ReviewConflicts | Action::ResolveConflict(..) => {
+                if self.state.account.status == crate::account::Status::Connected
+                    && !self.state.conflict_busy
+                    && let Some(enrollment) =
+                        self.state.data.as_ref().and_then(|d| d.enrollment.as_ref())
+                {
+                    let scope = enrollment.scope.clone();
+                    let command = match action {
+                        Action::ResolveConflict(operation, version, choice) => {
+                            crate::account::Command::ResolveConflict(
+                                scope, operation, version, choice,
+                            )
+                        }
+                        _ => crate::account::Command::ReviewConflicts(scope),
+                    };
+                    self.state.conflict_busy = true;
+                    self.state.delivery_active = false;
+                    self.account.send(command);
+                }
+            }
             Action::StartDelivery => {
                 if !self.state.setup_busy
                     && !self.state.delivery_active
@@ -302,6 +322,17 @@ impl App {
     fn receive(&mut self, ctx: &egui::Context) {
         while let Some(event) = self.account.receive() {
             match event {
+                crate::account::Event::ApplyResolution(scope, operation, resolution) => {
+                    self.send(Command::ApplyResolution(scope, operation, resolution))
+                }
+                crate::account::Event::Conflicts(scope, conflicts, more) => {
+                    self.state.conflict_busy = false;
+                    self.state.conflict_review = Some((scope, conflicts, more));
+                }
+                crate::account::Event::ConflictError(error) => {
+                    self.state.conflict_busy = false;
+                    self.state.delivery_message = Some(error);
+                }
                 crate::account::Event::DeliveryAttention(scope, operation) => {
                     self.send(Command::DeliveryAttention(scope, operation))
                 }
@@ -335,6 +366,8 @@ impl App {
                 },
                 crate::account::Event::State(view) => {
                     if view.status != crate::account::Status::Connected {
+                        self.state.conflict_review = None;
+                        self.state.conflict_busy = false;
                         self.state.sync_projects = None;
                         self.drafts.sync_project = None;
                     }

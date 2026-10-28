@@ -97,6 +97,10 @@ The native worker keeps later edits and deletions until the earlier operation is
 Migration 6 adds an attention flag to the pending outbox. It stores no error text or credentials.
 Snapshots derive entry status from enrollment, mapping, revision receipts, and the attention flag.
 Receipt and attention events refresh the snapshot. Idle delivery checks do not reload it.
+Native migration 7 records applied conflict decisions. Queue migration 6 retains reviewed results and retry keys.
+The account worker loads conflict snapshots without changing unrelated queue baselines or the normal change-feed cursor.
+The native worker applies each accepted result, any preserved copy, and its completion record in one transaction.
+See [native conflict review](native-conflicts.md) for restart recovery and the limits of this step.
 
 Pause sets the stop time of the session and clears the session of the row in one transaction.
 A session under one second is deleted instead of kept.

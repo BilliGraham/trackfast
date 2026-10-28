@@ -310,3 +310,227 @@ fn sync_status_explains_mapping_running_and_imported_work() {
         SyncStatus::Waiting
     );
 }
+
+#[test]
+fn remote_resolution_preserves_later_edits_and_replays_without_duplicates() {
+    use trackfast_sync::{
+        native_resolution::{Choice, Resolution},
+        transport::RemoteChange,
+    };
+    let mut store = Store::open_in_memory().unwrap();
+    let scope = scope();
+    store.enroll(&scope).unwrap();
+    store.save_entry(&entry()).unwrap();
+    let transfer = store.prepare_delivery(&scope).unwrap().unwrap();
+    let Change::Create(mut api) = transfer.change.clone() else {
+        panic!()
+    };
+    api.description = "API version".into();
+    let mut local = entry();
+    local.id = 1;
+    local.description = "Later local edit".into();
+    store.save_entry(&local).unwrap();
+    let resolution = Resolution {
+        choice: Choice::Remote,
+        remote: RemoteChange {
+            entry_id: transfer.entry_id,
+            version: 2,
+            entry: Some(api),
+        },
+    };
+    store
+        .apply_resolution(&scope, transfer.operation_id, &resolution)
+        .unwrap();
+    store
+        .apply_resolution(&scope, transfer.operation_id, &resolution)
+        .unwrap();
+    let snapshot = store.snapshot(Timestamp::UNIX_EPOCH).unwrap();
+    assert_eq!(snapshot.sessions.len(), 2);
+    assert_eq!(
+        snapshot
+            .sessions
+            .iter()
+            .find(|s| s.id == 1)
+            .unwrap()
+            .description,
+        "API version"
+    );
+    assert!(
+        snapshot
+            .sessions
+            .iter()
+            .any(|s| s.description == "Later local edit")
+    );
+    assert_eq!(
+        snapshot.sync_status(1),
+        crate::entries::SyncStatus::Confirmed
+    );
+    let next = store.prepare_delivery(&scope).unwrap().unwrap();
+    assert!(matches!(next.change, Change::Create(ref e) if e.description=="Later local edit"));
+    assert_ne!(next.entry_id, transfer.entry_id);
+}
+
+#[test]
+fn accepted_remote_deletion_and_copy_retain_native_identity_rules() {
+    use trackfast_sync::{
+        native_resolution::{Choice, Resolution},
+        transport::RemoteChange,
+    };
+    for choice in [Choice::Remote, Choice::Copy] {
+        let mut store = Store::open_in_memory().unwrap();
+        let scope = scope();
+        store.enroll(&scope).unwrap();
+        store.save_entry(&entry()).unwrap();
+        let transfer = store.prepare_delivery(&scope).unwrap().unwrap();
+        let resolution = Resolution {
+            choice,
+            remote: RemoteChange {
+                entry_id: transfer.entry_id,
+                version: 2,
+                entry: None,
+            },
+        };
+        store
+            .apply_resolution(&scope, transfer.operation_id, &resolution)
+            .unwrap();
+        store
+            .apply_resolution(&scope, transfer.operation_id, &resolution)
+            .unwrap();
+        let snapshot = store.snapshot(Timestamp::UNIX_EPOCH).unwrap();
+        assert_eq!(snapshot.sessions.len(), usize::from(choice == Choice::Copy));
+        let pending = store.prepare_delivery(&scope).unwrap();
+        assert_eq!(pending.is_some(), choice == Choice::Copy);
+        if let Some(pending) = pending {
+            assert_ne!(pending.entry_id, transfer.entry_id);
+        }
+    }
+}
+
+#[test]
+fn conflict_application_rolls_back_and_preserves_later_deletions() {
+    use trackfast_sync::{
+        native_resolution::{Choice, Resolution},
+        transport::RemoteChange,
+    };
+    let mut store = Store::open_in_memory().unwrap();
+    let scope = scope();
+    store.enroll(&scope).unwrap();
+    store.save_entry(&entry()).unwrap();
+    let transfer = store.prepare_delivery(&scope).unwrap().unwrap();
+    let Change::Create(api) = transfer.change.clone() else {
+        panic!()
+    };
+    let resolution = Resolution {
+        choice: Choice::Remote,
+        remote: RemoteChange {
+            entry_id: transfer.entry_id,
+            version: 2,
+            entry: Some(api),
+        },
+    };
+    store.delete_entry(1).unwrap();
+    store.connection.execute_batch("CREATE TRIGGER fail_apply BEFORE INSERT ON sync_applied_resolutions BEGIN SELECT RAISE(ABORT,'test'); END;").unwrap();
+    assert!(
+        store
+            .apply_resolution(&scope, transfer.operation_id, &resolution)
+            .is_err()
+    );
+    assert_eq!(store.prepare_delivery(&scope).unwrap().unwrap(), transfer);
+    store
+        .connection
+        .execute_batch("DROP TRIGGER fail_apply;")
+        .unwrap();
+    store
+        .apply_resolution(&scope, transfer.operation_id, &resolution)
+        .unwrap();
+    assert!(
+        store
+            .snapshot(Timestamp::UNIX_EPOCH)
+            .unwrap()
+            .sessions
+            .is_empty()
+    );
+    assert_eq!(
+        store.prepare_delivery(&scope).unwrap().unwrap().change,
+        Change::Delete
+    );
+}
+
+#[test]
+fn conflict_choice_survives_both_files_reopening_before_native_application() {
+    use trackfast_sync::{native_resolution::Choice, transport::RemoteChange};
+    let scope = scope();
+    let paths = [0, 1]
+        .map(|_| std::env::temp_dir().join(format!("native-resolution-{}.db", Uuid::new_v4())));
+    let transfer = {
+        let mut store = Store::open(&paths[0]).unwrap();
+        store.enroll(&scope).unwrap();
+        store.save_entry(&entry()).unwrap();
+        let transfer = store.prepare_delivery(&scope).unwrap().unwrap();
+        let mut queue = trackfast_sync::Queue::open(&paths[1], &scope).unwrap();
+        queue.stage_transfer(&transfer).unwrap();
+        drop(queue);
+        {
+            let connection = rusqlite::Connection::open(&paths[1]).unwrap();
+            connection
+                .execute(
+                    "UPDATE pending SET conflict=1 WHERE operation_id=?1",
+                    [transfer.operation_id.to_string()],
+                )
+                .unwrap();
+        }
+        let mut queue = trackfast_sync::Queue::open(&paths[1], &scope).unwrap();
+        let Change::Create(mut remote) = transfer.change.clone() else {
+            panic!()
+        };
+        remote.description = "Accepted remote".into();
+        queue
+            .record_native_conflicts(&[RemoteChange {
+                entry_id: transfer.entry_id,
+                version: 1,
+                entry: Some(remote),
+            }])
+            .unwrap();
+        queue
+            .resolve_native(transfer.operation_id, 1, Choice::Copy)
+            .unwrap();
+        transfer
+    };
+    {
+        let mut store = Store::open(&paths[0]).unwrap();
+        let mut queue = trackfast_sync::Queue::open(&paths[1], &scope).unwrap();
+        assert!(queue.stage_transfer(&transfer).unwrap());
+        let resolution = queue
+            .native_resolution(transfer.operation_id)
+            .unwrap()
+            .unwrap();
+        store
+            .apply_resolution(&scope, transfer.operation_id, &resolution)
+            .unwrap();
+    }
+    {
+        let mut store = Store::open(&paths[0]).unwrap();
+        let queue = trackfast_sync::Queue::open(&paths[1], &scope).unwrap();
+        store
+            .apply_resolution(
+                &scope,
+                transfer.operation_id,
+                &queue
+                    .native_resolution(transfer.operation_id)
+                    .unwrap()
+                    .unwrap(),
+            )
+            .unwrap();
+        let data = store.snapshot(Timestamp::UNIX_EPOCH).unwrap();
+        assert_eq!(data.sessions.len(), 2);
+        assert!(
+            data.sessions
+                .iter()
+                .any(|s| s.description == "Accepted remote")
+        );
+        assert!(data.sessions.iter().all(|s| s.details.round_to_five));
+    }
+    for path in paths {
+        std::fs::remove_file(path).unwrap();
+    }
+}

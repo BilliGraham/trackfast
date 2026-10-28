@@ -30,7 +30,7 @@ Read `Queue::sync_schedule` before transferring the queue to the worker to obtai
 Send `Stop`, or drop the command sender, to stop between cycles. Requests already in progress finish under transport timeouts.
 Wait for the worker thread to finish before opening the queue for conflict resolution or another session client.
 After correction, call `Queue::resume_sync` before restarting, or send `Resume` to an existing worker when appropriate.
-These APIs do not provide an interface dialog or a native sign-in screen.
+The native app now provides a separate [conflict review panel](native-conflicts.md) with a durable bridge to its own database.
 
 ## Conflict choices
 

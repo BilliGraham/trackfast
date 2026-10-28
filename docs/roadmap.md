@@ -42,8 +42,8 @@ Native migration 4 now adds explicit enrollment, a fixed first-sync boundary, an
 Native migration 5 now connects new work to the queue through an immutable outbox. Start delivery is explicit.
 Native migration 6 retains delivery attention state. Entry views now show the status of each current revision.
 The first live Windows delivery preserved 780 recorded seconds and 900 effective seconds with one receipt and one audit event.
-Native conflict review, remote-edit reconciliation, and further live delivery checks remain next.
-Shared deployment and native conflict review remain unfinished.
+Native conflict review now provides explicit local, API, and copy choices with restart recovery.
+General remote-edit reconciliation and further live delivery checks remain next. Shared deployment remains unfinished.
 Calendar-based holiday and leave adjustments are later work. Keep the configurable base target separate from calculated weekly adjustments.
 The pilot will use Google sign-in with an explicit approved-user list. Google will not host Trackfast data.
 Workspace membership is not assumed. An isolated registration check is available in google-signin.md.

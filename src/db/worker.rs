@@ -11,6 +11,11 @@ use super::{Import, ImportCount, ProjectDraft, Store};
 use crate::entries::{Snapshot, Task};
 
 pub enum Command {
+    ApplyResolution(
+        trackfast_sync::Scope,
+        uuid::Uuid,
+        Box<trackfast_sync::native_resolution::Resolution>,
+    ),
     DeliveryAttention(trackfast_sync::Scope, uuid::Uuid),
     PrepareDelivery(trackfast_sync::Scope),
     ConfirmDelivery(trackfast_sync::Scope, uuid::Uuid),
@@ -114,6 +119,14 @@ fn run(
     publish(&store, loaded_from);
     while let Ok(command) = commands.recv() {
         let command = match command {
+            Command::ApplyResolution(scope, operation, resolution) => {
+                match store.apply_resolution(&scope, operation, &resolution) {
+                    Ok(()) => notify(Event::DeliveryConfirmed),
+                    Err(error) => notify(Event::DeliveryFailed(error.to_string())),
+                }
+                publish(&store, loaded_from);
+                continue;
+            }
             Command::DeliveryAttention(scope, operation) => {
                 if let Err(error) = store.mark_delivery_attention(&scope, operation) {
                     notify(Event::DeliveryFailed(error.to_string()));
@@ -147,7 +160,8 @@ fn run(
             _ => None,
         };
         let result = match command {
-            Command::PrepareDelivery(_)
+            Command::ApplyResolution(..)
+            | Command::PrepareDelivery(_)
             | Command::ConfirmDelivery(..)
             | Command::DeliveryAttention(..) => unreachable!(),
             Command::Enroll(scope) => store.enroll(&scope),

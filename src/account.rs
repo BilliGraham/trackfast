@@ -192,6 +192,13 @@ pub struct View {
     pub problem: Option<String>,
 }
 pub enum Command {
+    ReviewConflicts(Scope),
+    ResolveConflict(
+        Scope,
+        uuid::Uuid,
+        i64,
+        trackfast_sync::native_resolution::Choice,
+    ),
     StartDelivery,
     StopDelivery,
     Deliver(Scope, Option<Box<trackfast_sync::transfer::Transfer>>),
@@ -203,6 +210,13 @@ pub enum Command {
     Stop,
 }
 pub enum Event {
+    Conflicts(Scope, Vec<trackfast_sync::Conflict>, bool),
+    ConflictError(String),
+    ApplyResolution(
+        Scope,
+        uuid::Uuid,
+        Box<trackfast_sync::native_resolution::Resolution>,
+    ),
     DeliveryAttention(Scope, uuid::Uuid),
     RequestDelivery(Scope),
     ConfirmDelivery(Scope, uuid::Uuid),
@@ -317,6 +331,12 @@ fn run(commands: Receiver<Command>, notify: &impl Fn(Event), cancel: Arc<AtomicB
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
         };
         match command {
+            Command::ReviewConflicts(scope) => {
+                delivery.review(&config, &mut client, &scope, notify)
+            }
+            Command::ResolveConflict(scope, operation, version, choice) => {
+                delivery.resolve(&config, &scope, operation, version, choice, notify)
+            }
             Command::StartDelivery => delivery.start(notify),
             Command::StopDelivery => delivery.stop(notify),
             Command::DeliveryConfirmed => delivery.confirmed(),

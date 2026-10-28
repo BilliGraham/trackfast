@@ -342,6 +342,12 @@ impl SessionClient {
     pub fn read(&mut self, id: Uuid) -> Result<RemoteEntry, SessionError> {
         self.engine.action(|client| client.read(id))
     }
+    pub fn read_changes(
+        &mut self,
+        cursor: Option<Uuid>,
+    ) -> Result<crate::transport::ChangePage, SessionError> {
+        self.engine.action(|client| client.read_changes(cursor))
+    }
     pub fn list_entries(
         &mut self,
         from: chrono::NaiveDate,

@@ -1,6 +1,6 @@
 mod retrieval;
 use crate::{Queue, Scope};
-pub use retrieval::{Page, Project, RemoteChange};
+pub use retrieval::{ChangePage, Page, Project, RemoteChange};
 use serde_json::{Value, json};
 use std::{net::SocketAddr, time::Duration};
 

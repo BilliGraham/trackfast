@@ -5,6 +5,9 @@ use std::path::Path;
 use uuid::Uuid;
 
 mod entry;
+pub mod native_resolution;
+#[cfg(test)]
+mod native_resolution_tests;
 mod remote;
 mod resolution;
 pub mod scheduler;
@@ -20,6 +23,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/003_remote.sql"),
     include_str!("../migrations/004_schedule.sql"),
     include_str!("../migrations/005_transfers.sql"),
+    include_str!("../migrations/006_native_resolutions.sql"),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -345,6 +349,7 @@ impl Queue {
             [&key],
         )
         .map_err(storage)?;
+        tx.execute("UPDATE native_transfers SET confirmed=1 WHERE operation_id IN (SELECT operation_id FROM native_resolutions WHERE retry_operation_id=?1)", [&key]).map_err(storage)?;
         tx.commit().map_err(storage)?;
         Ok(())
     }

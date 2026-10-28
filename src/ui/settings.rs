@@ -3,6 +3,7 @@ use eframe::egui::{self, RichText};
 use super::style;
 use crate::model::{Action, Drafts, ImportState, State};
 mod account;
+mod conflicts;
 mod sync_setup;
 pub use account::clear_secret_input;
 
@@ -27,6 +28,7 @@ fn contents(ui: &mut egui::Ui, state: &State, drafts: &mut Drafts, actions: &mut
     });
     ui.add_space(16.0);
     sync_setup::show(ui, state, drafts, actions);
+    conflicts::show(ui, state, actions);
     ui.add_space(16.0);
     if let Some(data) = &state.data {
         let settings = drafts.settings.get_or_insert_with(|| data.settings.clone());

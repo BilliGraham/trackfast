@@ -2,7 +2,7 @@ use crate::{Entry, Error, Queue, storage, transport::RemoteChange};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use uuid::Uuid;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Conflict {
     pub operation_id: Uuid,
     pub local: Entry,
@@ -148,7 +148,7 @@ impl Queue {
         Ok(key)
     }
 }
-fn reviewed(
+pub(crate) fn reviewed(
     tx: &Transaction<'_>,
     operation: Uuid,
     version: i64,
@@ -161,7 +161,7 @@ fn reviewed(
     }
     Ok((id, action, body, remote))
 }
-fn accept(
+pub(crate) fn accept(
     tx: &Transaction<'_>,
     id: &str,
     operation: Uuid,

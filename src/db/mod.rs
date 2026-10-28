@@ -7,6 +7,7 @@ pub mod enrollment;
 #[cfg(test)]
 mod enrollment_tests;
 mod local;
+mod resolution;
 #[cfg(test)]
 mod sync_identity_tests;
 pub mod worker;
@@ -57,6 +58,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("004_sync_enrollment.sql"),
     include_str!("005_delivery.sql"),
     include_str!("006_delivery_attention.sql"),
+    include_str!("007_resolutions.sql"),
 ];
 
 const RECENT_TASKS: i64 = 20;
