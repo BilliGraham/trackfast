@@ -16,6 +16,8 @@ It checks account identity and responses, preserves retry keys, and retains conf
 The optional [sync worker](docs/sync-recovery.md) schedules retries and supports reviewed conflict choices.
 The API and queue preserve captured rounding settings for offline entries.
 The desktop app still uses its existing local database.
+The database now retains stable entry identities, change revisions, and deletion records for the planned sync connection.
+This preparation does not enable uploads or create the first-sync boundary.
 An isolated [Google sign-in check](docs/google-signin.md) can validate the pilot registration. The separate API session check is described in [API sessions](docs/api-sessions.md).
 The API now has [personal settings](docs/settings.md) for rounding, the weekly target, and the visual indicator.
 Defaults are five-minute rounding, 35 hours per week, and the progress indicator. The native app has separate local settings with the same defaults.

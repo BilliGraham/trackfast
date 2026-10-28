@@ -84,7 +84,10 @@ The first tests failed before the native account types and callback flow existed
 The consent-refusal test failed because the listener kept waiting. The correction ends that attempt immediately.
 Tests cover callback rejection, PKCE, cancellation, narrow account layout, duplicate clicks, and secret undo history.
 The existing session suite covers restoration, renewal, identity binding, revocation, and credential-store failures.
-Live Google sign-in from the native interface still requires the user's browser check.
+The live check requires the user to complete Google sign-in in the browser.
+
+On October 28, 2026, the user confirmed successful Windows sign-in, restoration after restart, and sign-out.
+The local API and its database must be running before connection checks. Account sign-in still does not enable time-entry sync.
 
 On October 27, 2026, formatting, Clippy, tests, and builds passed for the native app on Windows and Linux.
 Both platforms passed 76 native tests. The session library passed 48 library tests and one example test with the native dependency versions on both platforms.

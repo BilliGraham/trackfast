@@ -1,6 +1,8 @@
 //! The local SQLite store. Only the database worker thread calls this module.
 
 mod local;
+#[cfg(test)]
+mod sync_identity_tests;
 pub mod worker;
 
 use std::path::{Path, PathBuf};
@@ -45,6 +47,7 @@ const MIGRATIONS: &[&str] = &[
     );
 ",
     include_str!("002_local.sql"),
+    include_str!("003_sync_identity.sql"),
 ];
 
 const RECENT_TASKS: i64 = 20;

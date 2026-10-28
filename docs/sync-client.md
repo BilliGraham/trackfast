@@ -83,8 +83,8 @@ macOS and visual checks did not run. The interface did not change.
 
 ## Remaining work
 
-1. Complete the live [native account check](native-account.md). The sign-in interface is implemented.
-2. Connect the native worker with captured rounding and an explicit first-connection boundary. Only work recorded after that boundary enters sync.
+1. Add explicit enrollment and project mappings. The live Windows account check passed on October 28, 2026.
+2. Connect the native worker with captured rounding and an explicit first-connection boundary. Only work created after that boundary enters sync.
 3. Add Xero exports and restricted PM reports before the pilot.
 
 The approved rounding and date policies are recorded in `api-contract.md`.
@@ -120,3 +120,17 @@ The queue preserves this value in its existing JSON body. Older queued entries r
 The transport sends the snapshot on creation and checks the applied interval in the receipt. Edits cannot change the snapshot.
 If conflicting copies have different snapshots, accept the remote copy or preserve local work as a new entry.
 The first native connection will leave older local history on this computer. New offline work will remain queued until confirmed.
+
+## Native identity preparation
+
+Native migration 3 retains stable entry keys, creation sequences, revisions, and deletion records.
+This prevents a reused local row ID from identifying a different entry during later delivery.
+The sequence records creation order. Backdated manual work created after enrollment can therefore remain eligible.
+The migration does not enroll an account or send entries. Project mapping and the transactional transfer to the queue remain next.
+The initial four regression tests failed before implementation. They cover migration, restart, deletion, row ID reuse, rollback, and backdated work.
+Additional tests check timer rounding and rollback when the identity revision cannot increase.
+A temporary-file test checks deletion records and creation order after the database closes and reopens.
+On October 28, 2026, all 83 native tests passed on Windows and Linux, including seven timer tests.
+Windows formatting and Clippy passed. Linux built successfully.
+The running Windows app locked the normal build output. Compilation passed with a separate output file through `cargo rustc`.
+The interface did not change. Visual checks and macOS checks did not run.

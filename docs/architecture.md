@@ -59,6 +59,7 @@ The file is `trackfast.db` in the local data folder of the user. WAL mode and fo
 | `projects` | Name, `#rrggbb` colour, optional client, and archived flag. |
 | `sessions` | Description, optional project, start, and stop in UTC seconds. A null stop means the session runs. |
 | `local_settings` | Rounding for new entries, weekly target hours, and the visual indicator. |
+| `session_sync_identity` | Stable random entry keys, creation order, change revisions, and retained deletion records. |
 | `widget_rows` | Up to three tasks, their order, and the running session of each row. |
 
 `clients`, `projects`, and `sessions` have a unique `toggl_id` column for imported rows.
@@ -72,6 +73,15 @@ Migration 2 adds optional duration seconds, a saved entry date and time zone, an
 Duration entries use a midnight timestamp as a storage index only. They do not occupy the calendar hour grid.
 Existing and imported entries keep exact totals. New entries capture the current rounding rule.
 The worker saves manual entries, deletion, and settings in separate transactions.
+
+Migration 3 assigns each existing session a random 128-bit key and a monotonic creation sequence.
+SQLite triggers assign new keys and update revisions in the same transaction as each session change.
+No-op updates do not increase the revision. Deletion clears the session reference but retains the key, sequence, and final revision.
+A reused SQLite session ID receives a new key and a greater sequence. Revision overflow aborts the complete statement.
+These records contain no copied entry text or credentials. They are local metadata, not confirmed API entries.
+The later enrollment step can save the maximum creation sequence once, independently of recorded calendar dates.
+No enrollment boundary, account binding, project mapping, or queue delivery exists in this migration.
+Triggers cover all current writers, including timers, manual entries, and imports. A later import policy must decide sync eligibility explicitly.
 
 Pause sets the stop time of the session and clears the session of the row in one transaction.
 A session under one second is deleted instead of kept.
