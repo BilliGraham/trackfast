@@ -11,6 +11,48 @@ pub const MAX_ROWS: usize = 3;
 /// 0 is Sunday, 1 is Monday. A setting can replace this later.
 pub const BEGINNING_OF_WEEK: u8 = 1;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SyncStatus {
+    #[default]
+    LocalOnly,
+    Waiting,
+    WaitingForStop,
+    NeedsMapping,
+    Confirmed,
+    NeedsAttention,
+}
+
+impl SyncStatus {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::LocalOnly => "Local only",
+            Self::Waiting => "Waiting for API",
+            Self::WaitingForStop => "Sync after stop",
+            Self::NeedsMapping => "Map project to sync",
+            Self::Confirmed => "API confirmed",
+            Self::NeedsAttention => "Sync needs attention",
+        }
+    }
+    pub fn explanation(self) -> &'static str {
+        match self {
+            Self::LocalOnly => {
+                "This entry stays on this computer. Existing history and imported entries are not sent."
+            }
+            Self::Waiting => {
+                "This revision has no API receipt yet. Start delivery in Settings. Offline work stays here until confirmed."
+            }
+            Self::WaitingForStop => "Stop this timer before delivery can send the entry.",
+            Self::NeedsMapping => "Select an API project for this local project in Settings.",
+            Self::Confirmed => {
+                "The API confirmed this revision. This does not mean it was exported to Xero."
+            }
+            Self::NeedsAttention => {
+                "Delivery stopped for this entry. Check the delivery message in Settings. Local work is preserved."
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Session {
     pub details: EntryDetails,
@@ -109,6 +151,7 @@ pub struct WidgetRow {
 /// Everything the views need, loaded in one read.
 #[derive(Clone, Debug, Default)]
 pub struct Snapshot {
+    pub sync_statuses: std::collections::BTreeMap<i64, SyncStatus>,
     pub enrollment: Option<crate::db::enrollment::Enrollment>,
     pub settings: Settings,
     pub projects: Vec<Project>,
@@ -122,6 +165,9 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    pub fn sync_status(&self, id: i64) -> SyncStatus {
+        self.sync_statuses.get(&id).copied().unwrap_or_default()
+    }
     pub fn project(&self, id: i64) -> Option<&Project> {
         self.projects.iter().find(|project| project.id == id)
     }

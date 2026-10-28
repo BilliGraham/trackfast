@@ -302,6 +302,9 @@ impl App {
     fn receive(&mut self, ctx: &egui::Context) {
         while let Some(event) = self.account.receive() {
             match event {
+                crate::account::Event::DeliveryAttention(scope, operation) => {
+                    self.send(Command::DeliveryAttention(scope, operation))
+                }
                 crate::account::Event::RequestDelivery(scope) => {
                     self.send(Command::PrepareDelivery(scope))
                 }

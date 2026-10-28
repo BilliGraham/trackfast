@@ -56,6 +56,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("003_sync_identity.sql"),
     include_str!("004_sync_enrollment.sql"),
     include_str!("005_delivery.sql"),
+    include_str!("006_delivery_attention.sql"),
 ];
 
 const RECENT_TASKS: i64 = 20;
@@ -396,6 +397,7 @@ impl Store {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(Snapshot {
+            sync_statuses: self.sync_statuses(loaded_from)?,
             enrollment: self.enrollment()?,
             settings: self.settings()?,
             projects,

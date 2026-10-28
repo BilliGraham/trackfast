@@ -194,3 +194,119 @@ fn failed_native_receipt_keeps_the_outbox_and_unconfirmed_revision() {
     assert_eq!(count, 0);
     assert_eq!(store.prepare_delivery(&scope).unwrap().unwrap(), transfer);
 }
+
+#[test]
+fn entry_sync_status_tracks_receipts_and_preserves_attention_across_restart() {
+    use crate::entries::SyncStatus;
+    let mut store = Store::open_in_memory().unwrap();
+    let scope = scope();
+    store.save_entry(&entry()).unwrap();
+    store.enroll(&scope).unwrap();
+    store.save_entry(&entry()).unwrap();
+    let status = |store: &Store, id| {
+        store
+            .snapshot(Timestamp::UNIX_EPOCH)
+            .unwrap()
+            .sync_status(id)
+    };
+    assert_eq!(status(&store, 1), SyncStatus::LocalOnly);
+    assert_eq!(status(&store, 2), SyncStatus::Waiting);
+    let transfer = store.prepare_delivery(&scope).unwrap().unwrap();
+    assert!(
+        store
+            .mark_delivery_attention(&scope, Uuid::new_v4())
+            .is_err()
+    );
+    store
+        .mark_delivery_attention(&scope, transfer.operation_id)
+        .unwrap();
+    let mut store = Store::prepare(store.connection).unwrap();
+    assert_eq!(status(&store, 2), SyncStatus::NeedsAttention);
+    store
+        .confirm_delivery(&scope, transfer.operation_id)
+        .unwrap();
+    assert_eq!(status(&store, 2), SyncStatus::Confirmed);
+    let mut changed = entry();
+    changed.id = 2;
+    changed.description = "Changed".into();
+    store.save_entry(&changed).unwrap();
+    assert_eq!(status(&store, 2), SyncStatus::Waiting);
+}
+
+#[test]
+fn sync_status_explains_mapping_running_and_imported_work() {
+    use crate::entries::SyncStatus;
+    let mut store = Store::open_in_memory().unwrap();
+    let scope = scope();
+    store.enroll(&scope).unwrap();
+    let project = store
+        .save_project(&ProjectDraft {
+            name: "Local project".into(),
+            colour: "#abcdef".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    let mut draft = entry();
+    draft.project_id = Some(project);
+    store.save_entry(&draft).unwrap();
+    assert_eq!(
+        store
+            .snapshot(Timestamp::UNIX_EPOCH)
+            .unwrap()
+            .sync_status(1),
+        SyncStatus::NeedsMapping
+    );
+    store.map_project(&scope, project, Uuid::new_v4()).unwrap();
+    assert_eq!(
+        store
+            .snapshot(Timestamp::UNIX_EPOCH)
+            .unwrap()
+            .sync_status(1),
+        SyncStatus::Waiting
+    );
+    store
+        .add_task(
+            &Task {
+                description: "Running".into(),
+                project_id: None,
+            },
+            Timestamp::UNIX_EPOCH,
+        )
+        .unwrap();
+    assert_eq!(
+        store
+            .snapshot(Timestamp::UNIX_EPOCH)
+            .unwrap()
+            .sync_status(2),
+        SyncStatus::WaitingForStop
+    );
+    store.save_entry(&entry()).unwrap();
+    store
+        .connection
+        .execute("UPDATE sessions SET toggl_id=123 WHERE id=3", [])
+        .unwrap();
+    assert_eq!(
+        store
+            .snapshot(Timestamp::UNIX_EPOCH)
+            .unwrap()
+            .sync_status(3),
+        SyncStatus::LocalOnly
+    );
+    let transfer = store.prepare_delivery(&scope).unwrap().unwrap();
+    let other = Scope {
+        person_id: Uuid::new_v4(),
+        ..scope.clone()
+    };
+    assert!(
+        store
+            .mark_delivery_attention(&other, transfer.operation_id)
+            .is_err()
+    );
+    assert_eq!(
+        store
+            .snapshot(Timestamp::UNIX_EPOCH)
+            .unwrap()
+            .sync_status(1),
+        SyncStatus::Waiting
+    );
+}

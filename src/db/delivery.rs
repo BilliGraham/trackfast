@@ -10,6 +10,64 @@ fn invalid() -> Error {
 }
 
 impl Store {
+    pub fn mark_delivery_attention(&mut self, scope: &Scope, operation: Uuid) -> Result<()> {
+        let tx = self.connection.transaction()?;
+        enrollment::require_scope(&tx, scope)?;
+        let body: Option<String> = tx
+            .query_row("SELECT body FROM sync_outbox WHERE id=1", [], |r| r.get(0))
+            .optional()?;
+        let transfer: Transfer =
+            serde_json::from_str(&body.ok_or_else(invalid)?).map_err(|_| invalid())?;
+        if transfer.operation_id != operation {
+            return Err(invalid());
+        }
+        tx.execute("UPDATE sync_outbox SET needs_attention=1 WHERE id=1", [])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub(super) fn sync_statuses(
+        &self,
+        loaded_from: Timestamp,
+    ) -> Result<std::collections::BTreeMap<i64, crate::entries::SyncStatus>> {
+        use crate::entries::SyncStatus;
+        let mut query = self.connection.prepare(
+            "SELECT s.id, CASE
+              WHEN e.boundary IS NULL OR i.sequence<=e.boundary OR s.toggl_id IS NOT NULL THEN 0
+              WHEN d.revision=i.revision THEN 1
+              WHEN o.needs_attention=1 THEN 2
+              WHEN s.stop_utc IS NULL THEN 3
+              WHEN s.project_id IS NOT NULL AND m.remote_project_id IS NULL THEN 4
+              ELSE 5 END
+             FROM sessions s JOIN session_sync_identity i ON i.session_id=s.id
+             LEFT JOIN sync_enrollment e ON e.id=1
+             LEFT JOIN sync_delivered d ON d.entry_key=i.entry_key
+             LEFT JOIN sync_outbox o ON o.entry_key=i.entry_key
+             LEFT JOIN sync_project_mappings m ON m.local_project_id=s.project_id
+             WHERE s.start_utc>=?1 OR s.entry_date>=?2 OR s.stop_utc IS NULL",
+        )?;
+        let rows = query.query_map(
+            params![
+                seconds(loaded_from),
+                loaded_from
+                    .to_zoned(jiff::tz::TimeZone::system())
+                    .date()
+                    .to_string()
+            ],
+            |r| {
+                let status = match r.get::<_, i64>(1)? {
+                    1 => SyncStatus::Confirmed,
+                    2 => SyncStatus::NeedsAttention,
+                    3 => SyncStatus::WaitingForStop,
+                    4 => SyncStatus::NeedsMapping,
+                    5 => SyncStatus::Waiting,
+                    _ => SyncStatus::LocalOnly,
+                };
+                Ok((r.get(0)?, status))
+            },
+        )?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
     pub fn prepare_delivery(&mut self, scope: &Scope) -> Result<Option<Transfer>> {
         let tx = self.connection.transaction()?;
         enrollment::require_scope(&tx, scope)?;
@@ -95,7 +153,7 @@ impl Store {
             change,
         };
         tx.execute(
-            "INSERT INTO sync_outbox VALUES(1,?1,?2,?3)",
+            "INSERT INTO sync_outbox(id,entry_key,revision,body) VALUES(1,?1,?2,?3)",
             params![
                 key,
                 revision,

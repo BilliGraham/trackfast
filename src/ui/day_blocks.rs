@@ -64,6 +64,7 @@ pub fn show(
                                             );
                                             super::project_label(ui, data, entry.project_id);
                                             ui.label(summary::clock(entry.effective(clock.now)));
+                                            super::sync_status_label(ui, data, entry.id);
                                             if entry.is_running() {
                                                 ui.weak("Running");
                                             }

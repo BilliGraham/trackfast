@@ -93,6 +93,7 @@ pub fn show(
                                 }
                                 super::duration(ui, &summary::clock(entry.effective(clock.now)));
                                 super::project_label(ui, snapshot, entry.project_id);
+                                super::sync_status_label(ui, snapshot, entry.id);
                             });
                         }
                     });
@@ -495,6 +496,7 @@ fn entry_block(
     }
     entry_response.on_hover_ui(|ui| {
         ui.strong(description(entry));
+        super::sync_status_label(ui, snapshot, entry.id);
         if let Some(project) = project {
             ui.colored_label(colour, &project.name);
         }

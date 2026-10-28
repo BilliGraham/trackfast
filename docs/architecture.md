@@ -94,6 +94,9 @@ Setup alone does not copy entries to the queue or send them to the API.
 Migration 5 adds the frozen outbox and revision receipts. Start delivery enables the account worker to request eligible work from the database worker.
 The account worker stages and sends that work through its separate queue. Only a verified queue receipt permits native acknowledgement.
 The native worker keeps later edits and deletions until the earlier operation is confirmed. Remote edits are not downloaded in this step.
+Migration 6 adds an attention flag to the pending outbox. It stores no error text or credentials.
+Snapshots derive entry status from enrollment, mapping, revision receipts, and the attention flag.
+Receipt and attention events refresh the snapshot. Idle delivery checks do not reload it.
 
 Pause sets the stop time of the session and clears the session of the row in one transaction.
 A session under one second is deleted instead of kept.

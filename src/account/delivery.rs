@@ -128,6 +128,14 @@ impl Delivery {
         })();
         if let Err(error) = result {
             self.active = false;
+            if scope == &config.scope()
+                && let Some(transfer) = transfer
+            {
+                notify(Event::DeliveryAttention(
+                    scope.clone(),
+                    transfer.operation_id,
+                ));
+            }
             notify(Event::DeliveryState(false, error));
         }
     }

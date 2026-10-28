@@ -11,6 +11,7 @@ use super::{Import, ImportCount, ProjectDraft, Store};
 use crate::entries::{Snapshot, Task};
 
 pub enum Command {
+    DeliveryAttention(trackfast_sync::Scope, uuid::Uuid),
     PrepareDelivery(trackfast_sync::Scope),
     ConfirmDelivery(trackfast_sync::Scope, uuid::Uuid),
     Enroll(trackfast_sync::Scope),
@@ -113,6 +114,13 @@ fn run(
     publish(&store, loaded_from);
     while let Ok(command) = commands.recv() {
         let command = match command {
+            Command::DeliveryAttention(scope, operation) => {
+                if let Err(error) = store.mark_delivery_attention(&scope, operation) {
+                    notify(Event::DeliveryFailed(error.to_string()));
+                }
+                publish(&store, loaded_from);
+                continue;
+            }
             Command::PrepareDelivery(scope) => {
                 match store.prepare_delivery(&scope) {
                     Ok(transfer) => notify(Event::DeliveryPrepared(scope, transfer.map(Box::new))),
@@ -125,6 +133,7 @@ fn run(
                     Ok(()) => notify(Event::DeliveryConfirmed),
                     Err(error) => notify(Event::DeliveryFailed(error.to_string())),
                 }
+                publish(&store, loaded_from);
                 continue;
             }
             other => other,
@@ -138,7 +147,9 @@ fn run(
             _ => None,
         };
         let result = match command {
-            Command::PrepareDelivery(_) | Command::ConfirmDelivery(..) => unreachable!(),
+            Command::PrepareDelivery(_)
+            | Command::ConfirmDelivery(..)
+            | Command::DeliveryAttention(..) => unreachable!(),
             Command::Enroll(scope) => store.enroll(&scope),
             Command::MapProject(scope, local, remote) => store.map_project(&scope, local, remote),
             Command::SaveEntry(entry) => store.save_entry(&entry),

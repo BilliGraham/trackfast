@@ -203,6 +203,7 @@ pub enum Command {
     Stop,
 }
 pub enum Event {
+    DeliveryAttention(Scope, uuid::Uuid),
     RequestDelivery(Scope),
     ConfirmDelivery(Scope, uuid::Uuid),
     DeliveryState(bool, String),

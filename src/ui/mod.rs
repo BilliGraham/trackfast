@@ -358,7 +358,19 @@ fn entry_row(
                 project_label(ui, data, session.project_id);
             });
         });
+        sync_status_label(ui, data, session.id);
     });
+}
+
+fn sync_status_label(ui: &mut egui::Ui, data: &Snapshot, id: i64) {
+    let status = data.sync_status(id);
+    let colour = if status == crate::entries::SyncStatus::NeedsAttention {
+        ui.visuals().warn_fg_color
+    } else {
+        ui.visuals().weak_text_color()
+    };
+    ui.add(egui::Label::new(egui::RichText::new(status.label()).small().color(colour)).wrap())
+        .on_hover_text(status.explanation());
 }
 
 /// The entry menu item that continues a session's task in the widget.
@@ -481,6 +493,7 @@ pub(crate) mod tests {
         };
         let running = session(1, "2026-10-16T12:00:00Z", None, Some(3));
         Snapshot {
+            sync_statuses: Default::default(),
             enrollment: None,
             projects: vec![Project {
                 id: 3,
@@ -579,6 +592,54 @@ pub(crate) mod tests {
 mod entry_label_tests {
     use super::*;
     #[test]
+    fn sync_status_labels_fit_narrow_views_in_both_themes() {
+        use crate::entries::SyncStatus;
+        for dark in [false, true] {
+            for width in [100.0, 340.0] {
+                for status in [
+                    SyncStatus::LocalOnly,
+                    SyncStatus::Waiting,
+                    SyncStatus::WaitingForStop,
+                    SyncStatus::NeedsMapping,
+                    SyncStatus::Confirmed,
+                    SyncStatus::NeedsAttention,
+                ] {
+                    let ctx = egui::Context::default();
+                    ctx.set_visuals(if dark {
+                        egui::Visuals::dark()
+                    } else {
+                        egui::Visuals::light()
+                    });
+                    let mut data = Snapshot::default();
+                    data.sync_statuses.insert(1, status);
+                    let mut output = ctx.run_ui(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(width, 150.0),
+                            )),
+                            ..Default::default()
+                        },
+                        |ui| sync_status_label(ui, &data, 1),
+                    );
+                    let mut found = false;
+                    for shape in &output.shapes {
+                        if let egui::Shape::Text(text) = &shape.shape {
+                            assert!(
+                                shape
+                                    .clip_rect
+                                    .contains_rect(text.galley.rect.translate(text.pos.to_vec2()))
+                            );
+                            found |= text.galley.text() == status.label();
+                        }
+                    }
+                    output.textures_delta.clear();
+                    assert!(found);
+                }
+            }
+        }
+    }
+    #[test]
     fn duration_rows_show_their_mode_and_preserved_recorded_time() {
         let ctx = egui::Context::default();
         ctx.set_fonts(style::fonts());
@@ -612,6 +673,7 @@ mod entry_label_tests {
         output.textures_delta.clear();
         assert!(text.contains("Duration only"), "{text}");
         assert!(text.contains("Recorded 0:13:00"), "{text}");
+        assert!(text.contains("Local only"), "{text}");
     }
 }
 

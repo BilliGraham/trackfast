@@ -19,6 +19,26 @@ Running timers wait until stopped. Entries that were already running when setup 
 
 ## Durable transfer
 
+### Entry status
+
+The list, Day blocks, and calendar duration rows show each entry's API sync status.
+Timed calendar blocks show it in the hover details. Hover over a label for an explanation.
+
+| Label | Meaning |
+| --- | --- |
+| Local only | Sync is not configured, or the entry is old history or an import. |
+| Waiting for API | The current revision has no receipt. It remains local while delivery is stopped or offline. |
+| Sync after stop | The new entry has a running timer. |
+| Map project to sync | The entry needs an explicit project mapping in Settings. |
+| API confirmed | The API confirmed the current revision. This does not indicate a Xero export. |
+| Sync needs attention | Delivery stopped for this pending entry after a failure. Check Settings before retrying. |
+
+A later edit changes a confirmed entry back to waiting. Confirmation of an older revision does not confirm that edit.
+Migration 6 retains the attention flag across restart. Successful confirmation removes the flag with its outbox operation.
+Deleted entries have no entry card. Delivery failures for deletions remain visible in Settings during that run.
+
+### Stored operations
+
 Native migration 5 adds a single frozen outbox and a confirmed revision per entry.
 The existing entry identity triggers record local changes in the same transaction as each user action.
 The database worker later reads the current eligible revision and saves one immutable operation in a transaction.
@@ -67,3 +87,11 @@ The optional operating-system credential-store test did not run. Formatting, Cli
 All 35 API tests passed on Windows and Linux against a disposable Postgres database, including the HTTP recovery fixture. Native, queue, and API builds passed on both platforms.
 The visual helper failed during initialization and after reset. Native visual checks and macOS checks did not run.
 No live entry delivery or pilot data changes were performed during these checks.
+
+The later live Windows check used an unassigned 13-minute entry with five-minute rounding enabled.
+A read-only database query confirmed 780 original seconds, 900 effective seconds, version 1, one audit event, and one saved receipt.
+
+The entry-status test failed before the snapshot API existed. The visible-label test failed before the interface displayed status.
+The status step passed all 102 native tests on Windows and Linux. Windows formatting and Clippy passed. Layout checks cover both themes and narrow labels.
+The running Windows app locked the standard executable. A separate executable is used for this build check.
+Windows and Linux builds passed. Live visual checks and macOS checks remain unperformed.
