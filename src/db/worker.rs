@@ -11,6 +11,8 @@ use super::{Import, ImportCount, ProjectDraft, Store};
 use crate::entries::{Snapshot, Task};
 
 pub enum Command {
+    Enroll(trackfast_sync::Scope),
+    MapProject(trackfast_sync::Scope, i64, uuid::Uuid),
     AddTask(Task, Timestamp),
     StartEntry(Task, Timestamp),
     SaveEntry(crate::entries::Session),
@@ -35,8 +37,10 @@ pub enum Saved {
 }
 
 pub enum Event {
+    SetupSaved,
+    SetupFailed(String),
     Saved(Saved),
-    Changed(Snapshot),
+    Changed(Box<Snapshot>),
     Imported(ImportCount),
     Failed(String),
 }
@@ -95,11 +99,12 @@ fn run(
         }
     };
     let publish = |store: &Store, loaded_from| match store.snapshot(loaded_from) {
-        Ok(snapshot) => notify(Event::Changed(snapshot)),
+        Ok(snapshot) => notify(Event::Changed(Box::new(snapshot))),
         Err(error) => notify(Event::Failed(error.to_string())),
     };
     publish(&store, loaded_from);
     while let Ok(command) = commands.recv() {
+        let setup = matches!(&command, Command::Enroll(_) | Command::MapProject(..));
         let saved = match &command {
             Command::StartEntry(_, _) => Some(Saved::Started),
             Command::SaveEntry(_) => Some(Saved::Entry),
@@ -108,6 +113,8 @@ fn run(
             _ => None,
         };
         let result = match command {
+            Command::Enroll(scope) => store.enroll(&scope),
+            Command::MapProject(scope, local, remote) => store.map_project(&scope, local, remote),
             Command::SaveEntry(entry) => store.save_entry(&entry),
             Command::DeleteEntry(id) => store.delete_entry(id),
             Command::SaveSettings(settings) => store.save_settings(&settings),
@@ -131,7 +138,12 @@ fn run(
         {
             notify(Event::Saved(saved));
         }
-        if let Err(error) = result {
+        if setup {
+            match result {
+                Ok(()) => notify(Event::SetupSaved),
+                Err(error) => notify(Event::SetupFailed(error.to_string())),
+            }
+        } else if let Err(error) = result {
             notify(Event::Failed(error.to_string()));
         }
         publish(&store, loaded_from);

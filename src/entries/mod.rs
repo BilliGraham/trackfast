@@ -109,6 +109,7 @@ pub struct WidgetRow {
 /// Everything the views need, loaded in one read.
 #[derive(Clone, Debug, Default)]
 pub struct Snapshot {
+    pub enrollment: Option<crate::db::enrollment::Enrollment>,
     pub settings: Settings,
     pub projects: Vec<Project>,
     pub clients: Vec<Client>,

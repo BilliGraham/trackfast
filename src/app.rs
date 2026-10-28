@@ -68,8 +68,19 @@ impl App {
             self.state.problem = None;
         }
         match action {
+            Action::SyncSetup(request) => {
+                if !self.state.setup_busy
+                    && self.state.account.status == crate::account::Status::Connected
+                    && self.state.data.is_some()
+                    && self.database.is_some()
+                {
+                    self.state.setup_busy = true;
+                    self.account.send(crate::account::Command::Setup(request));
+                }
+            }
             Action::SignIn => {
-                if !self.state.account.status.busy()
+                if !self.state.setup_busy
+                    && !self.state.account.status.busy()
                     && self.state.account.status != crate::account::Status::Connected
                 {
                     let secret = std::mem::take(&mut self.drafts.account_secret);
@@ -81,13 +92,13 @@ impl App {
             }
             Action::CancelSignIn => self.account.cancel(),
             Action::RestoreAccount => {
-                if !self.state.account.status.busy() {
+                if !self.state.setup_busy && !self.state.account.status.busy() {
                     self.state.account.status = crate::account::Status::Checking;
                     self.account.send(crate::account::Command::Restore);
                 }
             }
             Action::SignOut => {
-                if !self.state.account.status.busy() {
+                if !self.state.setup_busy && !self.state.account.status.busy() {
                     use zeroize::Zeroize;
                     self.drafts.account_secret.zeroize();
                     ui::clear_secret_input(ctx);
@@ -272,7 +283,31 @@ impl App {
     fn receive(&mut self, ctx: &egui::Context) {
         while let Some(event) = self.account.receive() {
             match event {
-                crate::account::Event::State(view) => self.state.account = view,
+                crate::account::Event::Setup(result) => match result {
+                    Ok(crate::account::SetupResult::Enrolled(scope)) => {
+                        self.send(Command::Enroll(scope))
+                    }
+                    Ok(crate::account::SetupResult::Mapped(scope, local, remote)) => {
+                        self.send(Command::MapProject(scope, local, remote))
+                    }
+                    Ok(crate::account::SetupResult::Projects(scope, projects)) => {
+                        self.state.sync_projects = Some((scope, projects));
+                        self.drafts.sync_project = None;
+                        self.state.setup_busy = false;
+                    }
+                    Err(error) => {
+                        self.state.setup_busy = false;
+                        self.state.sync_projects = None;
+                        self.state.problem = Some(error);
+                    }
+                },
+                crate::account::Event::State(view) => {
+                    if view.status != crate::account::Status::Connected {
+                        self.state.sync_projects = None;
+                        self.drafts.sync_project = None;
+                    }
+                    self.state.account = view;
+                }
                 crate::account::Event::Browser(url) => {
                     if self.account.browser_allowed() {
                         ctx.open_url(egui::OpenUrl::new_tab(url));
@@ -283,6 +318,17 @@ impl App {
         if let Some((_, events)) = &self.database {
             while let Some(event) = events.try_recv() {
                 match event {
+                    Event::SetupSaved => {
+                        self.state.setup_busy = false;
+                        self.drafts.sync_local_project = None;
+                        self.drafts.sync_project = None;
+                        self.state.notice =
+                            Some("Sync setup saved. Entry delivery is not enabled yet.".into());
+                    }
+                    Event::SetupFailed(problem) => {
+                        self.state.setup_busy = false;
+                        self.state.problem = Some(problem);
+                    }
                     Event::Saved(saved) => {
                         self.state.saving = false;
                         self.state.notice = Some("Saved on this computer.".into());
@@ -302,7 +348,7 @@ impl App {
                             crate::db::worker::Saved::Deletion => self.drafts.delete_entry = None,
                         }
                     }
-                    Event::Changed(snapshot) => self.state.data = Some(snapshot),
+                    Event::Changed(snapshot) => self.state.data = Some(*snapshot),
                     Event::Imported(count) => {
                         self.state.import = ImportState::Done(format!(
                             "Imported {} sessions and {} projects. Entries that an earlier import added were skipped.",

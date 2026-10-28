@@ -3,6 +3,7 @@ use eframe::egui::{self, RichText};
 use super::style;
 use crate::model::{Action, Drafts, ImportState, State};
 mod account;
+mod sync_setup;
 pub use account::clear_secret_input;
 
 const TOKEN_PAGE: &str = "https://track.toggl.com/profile";
@@ -21,7 +22,11 @@ pub fn show(ui: &mut egui::Ui, state: &State, drafts: &mut Drafts, actions: &mut
 fn contents(ui: &mut egui::Ui, state: &State, drafts: &mut Drafts, actions: &mut Vec<Action>) {
     ui.heading("Settings");
     ui.add_space(16.0);
-    account::show(ui, &state.account, drafts, actions);
+    ui.add_enabled_ui(!state.setup_busy, |ui| {
+        account::show(ui, &state.account, drafts, actions)
+    });
+    ui.add_space(16.0);
+    sync_setup::show(ui, state, drafts, actions);
     ui.add_space(16.0);
     if let Some(data) = &state.data {
         let settings = drafts.settings.get_or_insert_with(|| data.settings.clone());

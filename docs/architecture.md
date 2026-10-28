@@ -60,6 +60,8 @@ The file is `trackfast.db` in the local data folder of the user. WAL mode and fo
 | `sessions` | Description, optional project, start, and stop in UTC seconds. A null stop means the session runs. |
 | `local_settings` | Rounding for new entries, weekly target hours, and the visual indicator. |
 | `session_sync_identity` | Stable random entry keys, creation order, change revisions, and retained deletion records. |
+| `sync_enrollment` | One API, tenant, and person binding with a fixed creation boundary. |
+| `sync_project_mappings` | Explicit local-to-API project mappings for the saved binding. |
 | `widget_rows` | Up to three tasks, their order, and the running session of each row. |
 
 `clients`, `projects`, and `sessions` have a unique `toggl_id` column for imported rows.
@@ -80,8 +82,14 @@ No-op updates do not increase the revision. Deletion clears the session referenc
 A reused SQLite session ID receives a new key and a greater sequence. Revision overflow aborts the complete statement.
 These records contain no copied entry text or credentials. They are local metadata, not confirmed API entries.
 The later enrollment step can save the maximum creation sequence once, independently of recorded calendar dates.
-No enrollment boundary, account binding, project mapping, or queue delivery exists in this migration.
-Triggers cover all current writers, including timers, manual entries, and imports. A later import policy must decide sync eligibility explicitly.
+Migration 3 does not itself enroll the database or deliver entries.
+Triggers cover all current writers, including timers, manual entries, and imports.
+
+Migration 4 adds explicit enrollment and project mappings. See [native sync setup](native-sync-setup.md).
+The account worker verifies identity and API project access before sending a setup result to the database worker.
+The database worker saves each setup action in one transaction. Existing enrollment cannot change its account or boundary.
+Imported history stays local. New completed native entries after the boundary are counted independently of their calendar dates.
+Setup does not copy entries to the queue or send them to the API.
 
 Pause sets the stop time of the session and clears the session of the row in one transaction.
 A session under one second is deleted instead of kept.

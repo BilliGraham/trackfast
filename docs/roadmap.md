@@ -38,7 +38,8 @@ Scheduled retries and explicit conflict choices now exist in the separate sync c
 The API and queue now preserve an optional recording-time rounding choice across offline delivery.
 The first native connection will sync new work only. Existing history will remain local. New offline work will remain queued until confirmed.
 Native migration 3 now prepares stable entry identities, creation sequences, and retained deletion records.
-Enrollment, project mappings, and native queue delivery remain next. This migration does not send entries.
+Native migration 4 now adds explicit enrollment, a fixed first-sync boundary, and project mappings through Settings.
+Native queue delivery remains next. These migrations do not send entries.
 Shared deployment and native connection work remain unfinished.
 Calendar-based holiday and leave adjustments are later work. Keep the configurable base target separate from calculated weekly adjustments.
 The pilot will use Google sign-in with an explicit approved-user list. Google will not host Trackfast data.

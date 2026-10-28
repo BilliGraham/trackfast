@@ -3,7 +3,7 @@
 The native Settings screen now supports Google sign-in to the local Trackfast API.
 It can restore a saved session, check the connection, cancel browser sign-in, and sign out.
 This step connects the account only. The app does not send time entries, projects, or settings to the API.
-The first-sync boundary is not created by sign-in. The later sync connection will leave existing history local, as agreed.
+The first-sync boundary is not created by sign-in. The separate [sync setup](native-sync-setup.md) action saves that boundary and leaves existing history local.
 
 ## Configure the local pilot
 

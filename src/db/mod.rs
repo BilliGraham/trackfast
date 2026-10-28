@@ -1,5 +1,8 @@
 //! The local SQLite store. Only the database worker thread calls this module.
 
+pub mod enrollment;
+#[cfg(test)]
+mod enrollment_tests;
 mod local;
 #[cfg(test)]
 mod sync_identity_tests;
@@ -48,6 +51,7 @@ const MIGRATIONS: &[&str] = &[
 ",
     include_str!("002_local.sql"),
     include_str!("003_sync_identity.sql"),
+    include_str!("004_sync_enrollment.sql"),
 ];
 
 const RECENT_TASKS: i64 = 20;
@@ -388,6 +392,7 @@ impl Store {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(Snapshot {
+            enrollment: self.enrollment()?,
             settings: self.settings()?,
             projects,
             clients,

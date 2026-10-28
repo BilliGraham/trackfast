@@ -67,6 +67,11 @@ pub enum ImportState {
 
 #[derive(Default)]
 pub struct State {
+    pub setup_busy: bool,
+    pub sync_projects: Option<(
+        trackfast_sync::Scope,
+        Vec<trackfast_sync::transport::Project>,
+    )>,
     pub account: crate::account::View,
     pub saving: bool,
     pub notice: Option<String>,
@@ -84,6 +89,8 @@ pub struct State {
 /// mutable buffer. The app reads and clears a draft when it acts on it.
 #[derive(Default)]
 pub struct Drafts {
+    pub sync_project: Option<uuid::Uuid>,
+    pub sync_local_project: Option<i64>,
     pub account_secret: zeroize::Zeroizing<String>,
     pub entry: Option<EntryDraft>,
     pub settings: Option<crate::entries::Settings>,
@@ -95,6 +102,7 @@ pub struct Drafts {
 }
 
 pub enum Action {
+    SyncSetup(crate::account::SetupRequest),
     SignIn,
     CancelSignIn,
     RestoreAccount,

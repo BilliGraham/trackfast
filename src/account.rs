@@ -59,6 +59,44 @@ mod tests {
         bad["server"] = serde_json::json!("http://example.com:8788");
         assert!(Config::parse(&bad.to_string()).is_err());
     }
+
+    #[test]
+    fn project_catalog_follows_pages_and_rejects_repeated_cursors() {
+        use trackfast_sync::transport::{Page, Project};
+        let id = uuid::Uuid::new_v4();
+        let mut calls = 0;
+        let projects = read_projects(|cursor| {
+            calls += 1;
+            if cursor.is_none() {
+                Ok(Page {
+                    items: vec![Project {
+                        project_id: id,
+                        name: "One".into(),
+                        colour: "#abcdef".into(),
+                        archived: false,
+                    }],
+                    next_cursor: Some(id),
+                })
+            } else {
+                assert_eq!(cursor, Some(id));
+                Ok(Page {
+                    items: vec![],
+                    next_cursor: None,
+                })
+            }
+        })
+        .unwrap();
+        assert_eq!(calls, 2);
+        assert_eq!(projects.len(), 1);
+        assert!(
+            read_projects(|_| Ok(Page {
+                items: vec![],
+                next_cursor: Some(id)
+            }))
+            .is_err()
+        );
+        assert!(read_projects(|_| Err("Unavailable".into())).is_err());
+    }
 }
 mod oauth;
 use eframe::egui;
@@ -153,14 +191,27 @@ pub struct View {
     pub problem: Option<String>,
 }
 pub enum Command {
+    Setup(SetupRequest),
     SignIn(Zeroizing<String>),
     Restore,
     SignOut,
     Stop,
 }
 pub enum Event {
+    Setup(Result<SetupResult, String>),
     State(View),
     Browser(String),
+}
+#[derive(Clone, Copy)]
+pub enum SetupRequest {
+    Enroll,
+    Projects,
+    Map(i64, uuid::Uuid),
+}
+pub enum SetupResult {
+    Enrolled(Scope),
+    Projects(Scope, Vec<trackfast_sync::transport::Project>),
+    Mapped(Scope, i64, uuid::Uuid),
 }
 pub struct Account {
     commands: Sender<Command>,
@@ -246,6 +297,35 @@ fn run(commands: Receiver<Command>, notify: &impl Fn(Event), cancel: Arc<AtomicB
     publish_result(initial, notify);
     while let Ok(command) = commands.recv() {
         match command {
+            Command::Setup(request) => {
+                let result = (|| -> Result<SetupResult, String> {
+                    restore(&mut client, &config).map_err(|e| e.to_string())?;
+                    let scope = config.scope();
+                    if matches!(request, SetupRequest::Enroll) {
+                        return Ok(SetupResult::Enrolled(scope));
+                    }
+                    let projects = read_projects(|cursor| {
+                        client
+                            .as_mut()
+                            .unwrap()
+                            .list_projects(100, cursor)
+                            .map_err(|e| e.to_string())
+                    })?;
+                    match request {
+                        SetupRequest::Map(local, remote) => {
+                            if !projects
+                                .iter()
+                                .any(|p| p.project_id == remote && !p.archived)
+                            {
+                                return Err("This API project is unavailable or archived. Refresh the project list.".into());
+                            }
+                            Ok(SetupResult::Mapped(scope, local, remote))
+                        }
+                        _ => Ok(SetupResult::Projects(scope, projects)),
+                    }
+                })();
+                notify(Event::Setup(result));
+            }
             Command::Stop => return,
             Command::Restore => {
                 state(Status::Checking, None);
@@ -318,4 +398,37 @@ fn publish_result(result: Result<(), SessionError>, notify: &impl Fn(Event)) {
         },
     };
     notify(Event::State(view));
+}
+
+fn read_projects(
+    mut fetch: impl FnMut(
+        Option<uuid::Uuid>,
+    ) -> Result<
+        trackfast_sync::transport::Page<trackfast_sync::transport::Project>,
+        String,
+    >,
+) -> Result<Vec<trackfast_sync::transport::Project>, String> {
+    let mut projects = Vec::new();
+    let mut cursors = std::collections::HashSet::new();
+    let mut ids = std::collections::HashSet::new();
+    let mut cursor = None;
+    for _ in 0..10 {
+        let page = fetch(cursor)?;
+        for project in page.items {
+            if !ids.insert(project.project_id) {
+                return Err(
+                    "The API returned a repeated project. Refresh the project list.".into(),
+                );
+            }
+            projects.push(project);
+        }
+        let Some(next) = page.next_cursor else {
+            return Ok(projects);
+        };
+        if !cursors.insert(next) {
+            return Err("The API repeated a project page. Refresh the project list.".into());
+        }
+        cursor = Some(next);
+    }
+    Err("The API project list exceeds the pilot limit of ten pages.".into())
 }

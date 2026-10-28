@@ -481,6 +481,7 @@ pub(crate) mod tests {
         };
         let running = session(1, "2026-10-16T12:00:00Z", None, Some(3));
         Snapshot {
+            enrollment: None,
             projects: vec![Project {
                 id: 3,
                 name: "Site".into(),
