@@ -2,7 +2,7 @@
 
 The separate `sync-client/` Rust library provides a durable queue and a loopback HTTP adapter.
 It supports completed timed and duration entries with optional project assignments. Original seconds remain exact.
-Response checks support rounding Off or five-minute rounding. The native app is not connected.
+Response checks support rounding Off or five-minute rounding. The native app uses explicit [delivery](native-delivery.md) through a frozen outbox.
 `Entry` stores the common fields, optional `project_id`, and optional `Timing`. `DurationEntry` remains a compatibility type name.
 For timed work, the supplied original seconds must match the endpoints. The transport omits that field from the timed request.
 Personal settings now work in the API. The client does not queue settings changes yet.
@@ -84,7 +84,7 @@ macOS and visual checks did not run. The interface did not change.
 ## Remaining work
 
 1. Check the new [native sync setup](native-sync-setup.md) interface. Enrollment and explicit project mappings are implemented.
-2. Connect the native worker to the queue with captured rounding and the saved first-connection boundary. Only work created after that boundary enters sync.
+2. Add native conflict review and remote-edit reconciliation. Explicit native delivery now uses captured rounding and the saved first-connection boundary.
 3. Add Xero exports and restricted PM reports before the pilot.
 
 The approved rounding and date policies are recorded in `api-contract.md`.
@@ -127,7 +127,7 @@ Native migration 3 retains stable entry keys, creation sequences, revisions, and
 This prevents a reused local row ID from identifying a different entry during later delivery.
 The sequence records creation order. Backdated manual work created after enrollment can therefore remain eligible.
 Migration 3 does not enroll an account or send entries. Migration 4 now adds explicit enrollment and project mapping.
-The transactional transfer to the queue remains next.
+Native migration 5 and queue migration 5 now provide transactional transfer and receipt recovery.
 The initial four regression tests failed before implementation. They cover migration, restart, deletion, row ID reuse, rollback, and backdated work.
 Additional tests check timer rounding and rollback when the identity revision cannot increase.
 A temporary-file test checks deletion records and creation order after the database closes and reopens.

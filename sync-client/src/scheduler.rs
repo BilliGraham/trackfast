@@ -132,6 +132,28 @@ mod tests {
         commands.send(Command::Stop).unwrap();
         assert!(worker.join().unwrap().is_ok());
     }
+
+    #[test]
+    fn native_delivery_respects_retry_deadlines_without_pulling_remote_edits() {
+        struct NativeBackend(usize);
+        impl SyncBackend for NativeBackend {
+            fn sync(&mut self, _: &mut Queue) -> Result<usize, SessionError> {
+                self.0 += 1;
+                Err(SessionError::Sync(SyncError::RateLimited {
+                    retry_after_seconds: Some(60),
+                }))
+            }
+            fn pull_changes(&mut self, _: &mut Queue) -> Result<bool, SessionError> {
+                panic!("native delivery must not import remote edits");
+            }
+        }
+        let mut q = queue();
+        let mut backend = NativeBackend(0);
+        step(&mut q, &mut PushOnly(&mut backend), || 1000, 0).unwrap();
+        q.resume_sync(2000).unwrap();
+        step(&mut q, &mut PushOnly(&mut backend), || 2000, 0).unwrap();
+        assert_eq!(backend.0, 1);
+    }
 }
 use crate::{
     Error, Queue,
@@ -210,6 +232,26 @@ impl Queue {
 trait SyncBackend {
     fn pull_changes(&mut self, queue: &mut Queue) -> Result<bool, SessionError>;
     fn sync(&mut self, queue: &mut Queue) -> Result<usize, SessionError>;
+}
+struct PushOnly<'a, T>(&'a mut T);
+impl<T: SyncBackend> SyncBackend for PushOnly<'_, T> {
+    fn sync(&mut self, queue: &mut Queue) -> Result<usize, SessionError> {
+        self.0.sync(queue)
+    }
+    fn pull_changes(&mut self, _: &mut Queue) -> Result<bool, SessionError> {
+        Ok(false)
+    }
+}
+
+/// Sends at most one pending change with persistent retry and pause rules.
+/// Remote changes remain untouched until the caller supports local reconciliation.
+pub fn delivery_step(queue: &mut Queue, client: &mut SessionClient) -> Result<Schedule, Error> {
+    step(
+        queue,
+        &mut PushOnly(client),
+        || chrono::Utc::now().timestamp_millis(),
+        uuid::Uuid::new_v4().as_u128() as u64,
+    )
 }
 impl SyncBackend for SessionClient {
     fn pull_changes(&mut self, queue: &mut Queue) -> Result<bool, SessionError> {

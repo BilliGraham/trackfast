@@ -35,7 +35,7 @@ fn parse_id(value: &str) -> Result<Uuid> {
     Uuid::parse_str(value).map_err(|_| Error("The saved sync identity is invalid.".into()))
 }
 
-fn require_scope(connection: &Connection, scope: &Scope) -> Result<()> {
+pub(super) fn require_scope(connection: &Connection, scope: &Scope) -> Result<()> {
     match read_binding(connection)? {
         Some((saved, _)) if saved == *scope => Ok(()),
         _ => Err(Error(

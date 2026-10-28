@@ -1,5 +1,8 @@
 //! The local SQLite store. Only the database worker thread calls this module.
 
+mod delivery;
+#[cfg(test)]
+mod delivery_tests;
 pub mod enrollment;
 #[cfg(test)]
 mod enrollment_tests;
@@ -52,6 +55,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("002_local.sql"),
     include_str!("003_sync_identity.sql"),
     include_str!("004_sync_enrollment.sql"),
+    include_str!("005_delivery.sql"),
 ];
 
 const RECENT_TASKS: i64 = 20;

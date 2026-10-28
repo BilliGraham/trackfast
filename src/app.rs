@@ -68,6 +68,25 @@ impl App {
             self.state.problem = None;
         }
         match action {
+            Action::StartDelivery => {
+                if !self.state.setup_busy
+                    && !self.state.delivery_active
+                    && self.state.account.status == crate::account::Status::Connected
+                    && self.database.is_some()
+                    && self
+                        .state
+                        .data
+                        .as_ref()
+                        .is_some_and(|data| data.enrollment.is_some())
+                {
+                    self.state.delivery_active = true;
+                    self.account.send(crate::account::Command::StartDelivery);
+                }
+            }
+            Action::StopDelivery => {
+                self.state.delivery_active = false;
+                self.account.send(crate::account::Command::StopDelivery);
+            }
             Action::SyncSetup(request) => {
                 if !self.state.setup_busy
                     && self.state.account.status == crate::account::Status::Connected
@@ -283,6 +302,16 @@ impl App {
     fn receive(&mut self, ctx: &egui::Context) {
         while let Some(event) = self.account.receive() {
             match event {
+                crate::account::Event::RequestDelivery(scope) => {
+                    self.send(Command::PrepareDelivery(scope))
+                }
+                crate::account::Event::ConfirmDelivery(scope, operation) => {
+                    self.send(Command::ConfirmDelivery(scope, operation))
+                }
+                crate::account::Event::DeliveryState(active, message) => {
+                    self.state.delivery_active = active;
+                    self.state.delivery_message = Some(message);
+                }
                 crate::account::Event::Setup(result) => match result {
                     Ok(crate::account::SetupResult::Enrolled(scope)) => {
                         self.send(Command::Enroll(scope))
@@ -318,12 +347,23 @@ impl App {
         if let Some((_, events)) = &self.database {
             while let Some(event) = events.try_recv() {
                 match event {
+                    Event::DeliveryPrepared(scope, transfer) => self
+                        .account
+                        .send(crate::account::Command::Deliver(scope, transfer)),
+                    Event::DeliveryConfirmed => self
+                        .account
+                        .send(crate::account::Command::DeliveryConfirmed),
+                    Event::DeliveryFailed(error) => {
+                        self.state.delivery_active = false;
+                        self.state.problem = Some(error);
+                        self.account.send(crate::account::Command::StopDelivery);
+                    }
                     Event::SetupSaved => {
                         self.state.setup_busy = false;
                         self.drafts.sync_local_project = None;
                         self.drafts.sync_project = None;
                         self.state.notice =
-                            Some("Sync setup saved. Entry delivery is not enabled yet.".into());
+                            Some("Sync setup saved. Use Start delivery to send new work.".into());
                     }
                     Event::SetupFailed(problem) => {
                         self.state.setup_busy = false;

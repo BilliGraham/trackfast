@@ -13,10 +13,19 @@ pub fn show(ui: &mut egui::Ui, state: &State, drafts: &mut Drafts, actions: &mut
         ui.set_width(ui.available_width().min(460.0));
         ui.strong("Time-entry sync setup");
         ui.add_space(8.0);
-        ui.weak("Entry delivery is not enabled yet. This setup saves the account, the starting point, and project mappings.");
+        ui.weak("Setup saves the account, starting point, and project mappings. Start delivery when you are ready to send new work.");
         let connected = state.account.status == Status::Connected;
         if !connected { ui.label("Sign in before you prepare sync or select API projects."); }
         if let Some(enrollment) = &data.enrollment {
+            ui.horizontal_wrapped(|ui| {
+                if state.delivery_active {
+                    if ui.button("Stop delivery").clicked() { actions.push(Action::StopDelivery); }
+                } else if ui.add_enabled(connected && !state.setup_busy, egui::Button::new("Start delivery")).clicked() {
+                    actions.push(Action::StartDelivery);
+                }
+            });
+            if let Some(message)=&state.delivery_message { ui.label(message); }
+            ui.weak("Delivery sends new mapped work to Trackfast. Start it again after restarting the app. Conflicts pause delivery.");
             ui.label("The starting point is saved. Existing entries remain local.");
             ui.weak("Timers that were already running at setup remain local. Imported history remains local.");
             ui.label(format!("{} new completed entries saved locally since setup.", enrollment.new_entries));
@@ -68,7 +77,7 @@ pub fn show(ui: &mut egui::Ui, state: &State, drafts: &mut Drafts, actions: &mut
             } else {
                 ui.weak(format!("{} project mappings saved. Refresh to review API project names.", enrollment.mappings.len()));
             }
-            ui.weak("Projects without a mapping will wait for setup. Entries without a project will remain unassigned.");
+            ui.weak("Projects without a mapping wait for setup. Entries without a project remain unassigned.");
         } else {
             ui.label("Keep all current entries on this computer. Prepare only work created after you save setup.");
             ui.weak("This also excludes timers that are already running.");
@@ -91,6 +100,48 @@ mod tests {
         model::{Action, Drafts, State},
     };
     use eframe::egui;
+
+    #[test]
+    fn delivery_controls_require_saved_setup_and_show_stop_while_active() {
+        let ctx = egui::Context::default();
+        let mut state = State {
+            data: Some(Snapshot::default()),
+            ..Default::default()
+        };
+        state.account.status = Status::Connected;
+        let labels = |state: &State| {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                show(ui, state, &mut Drafts::default(), &mut vec![])
+            });
+            output.textures_delta.clear();
+            output
+                .shapes
+                .into_iter()
+                .filter_map(|s| {
+                    if let egui::Shape::Text(t) = s.shape {
+                        Some(t.galley.text().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(!labels(&state).iter().any(|s| s == "Start delivery"));
+        state.data.as_mut().unwrap().enrollment = Some(crate::db::enrollment::Enrollment {
+            scope: trackfast_sync::Scope {
+                server: "http://127.0.0.1:8788".into(),
+                tenant_id: uuid::Uuid::new_v4(),
+                person_id: uuid::Uuid::new_v4(),
+            },
+            boundary: 0,
+            mappings: vec![],
+            new_entries: 0,
+        });
+        assert!(labels(&state).iter().any(|s| s == "Start delivery"));
+        state.delivery_active = true;
+        assert!(labels(&state).iter().any(|s| s == "Stop delivery"));
+        assert!(!labels(&state).iter().any(|s| s == "Start delivery"));
+    }
 
     #[test]
     fn setup_button_requires_connection_and_returns_one_explicit_action() {

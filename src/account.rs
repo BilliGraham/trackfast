@@ -98,6 +98,7 @@ mod tests {
         assert!(read_projects(|_| Err("Unavailable".into())).is_err());
     }
 }
+mod delivery;
 mod oauth;
 use eframe::egui;
 #[cfg(test)]
@@ -191,6 +192,10 @@ pub struct View {
     pub problem: Option<String>,
 }
 pub enum Command {
+    StartDelivery,
+    StopDelivery,
+    Deliver(Scope, Option<Box<trackfast_sync::transfer::Transfer>>),
+    DeliveryConfirmed,
     Setup(SetupRequest),
     SignIn(Zeroizing<String>),
     Restore,
@@ -198,6 +203,9 @@ pub enum Command {
     Stop,
 }
 pub enum Event {
+    RequestDelivery(Scope),
+    ConfirmDelivery(Scope, uuid::Uuid),
+    DeliveryState(bool, String),
     Setup(Result<SetupResult, String>),
     State(View),
     Browser(String),
@@ -254,7 +262,9 @@ impl Account {
         }
     }
     pub fn send(&self, command: Command) {
-        self.cancelled.store(false, Ordering::Release);
+        if matches!(&command, Command::SignIn(_)) {
+            self.cancelled.store(false, Ordering::Release);
+        }
         let _ = self.commands.send(command);
     }
     pub fn cancel(&self) {
@@ -292,11 +302,26 @@ fn run(commands: Receiver<Command>, notify: &impl Fn(Event), cancel: Arc<AtomicB
     };
     let state = |status, problem| notify(Event::State(View { status, problem }));
     let mut client = None;
+    let mut delivery = delivery::Delivery::default();
     state(Status::Checking, None);
     let initial = restore(&mut client, &config);
     publish_result(initial, notify);
-    while let Ok(command) = commands.recv() {
+    loop {
+        let command = match commands.recv_timeout(std::time::Duration::from_secs(1)) {
+            Ok(command) => command,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                delivery.request(&config, notify);
+                continue;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+        };
         match command {
+            Command::StartDelivery => delivery.start(notify),
+            Command::StopDelivery => delivery.stop(notify),
+            Command::DeliveryConfirmed => delivery.confirmed(),
+            Command::Deliver(scope, transfer) => {
+                delivery.deliver(&config, &mut client, &scope, transfer.as_deref(), notify)
+            }
             Command::Setup(request) => {
                 let result = (|| -> Result<SetupResult, String> {
                     restore(&mut client, &config).map_err(|e| e.to_string())?;
@@ -332,6 +357,7 @@ fn run(commands: Receiver<Command>, notify: &impl Fn(Event), cancel: Arc<AtomicB
                 publish_result(restore(&mut client, &config), notify);
             }
             Command::SignOut => {
+                delivery.stop(notify);
                 state(Status::SigningOut, None);
                 let result = (|| {
                     if client.is_none() {

@@ -1,7 +1,7 @@
 # Scheduled sync and conflict recovery
 
 The separate Rust sync client provides an optional worker and explicit conflict choices.
-The native app still uses its local database. This step does not connect its interface or change Xero records.
+The native app uses its local database and an explicit [delivery controller](native-delivery.md). Xero records are unchanged.
 
 ## Worker lifecycle
 

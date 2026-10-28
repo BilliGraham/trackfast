@@ -3,7 +3,7 @@
 This document describes the current local app.
 See [the roadmap](roadmap.md) and [API contract](api-contract.md) for the target architecture.
 Phase 1 does not change the runtime or database schema described here.
-The separate phase 3 queue leaves the local time-data flow unchanged. See [the queue design](sync-client.md).
+The separate queue receives frozen native operations after explicit delivery starts. See [native delivery](native-delivery.md).
 The optional [native account worker](native-account.md) connects sign-in independently of the database worker.
 
 | Module | Responsibility |
@@ -62,6 +62,7 @@ The file is `trackfast.db` in the local data folder of the user. WAL mode and fo
 | `session_sync_identity` | Stable random entry keys, creation order, change revisions, and retained deletion records. |
 | `sync_enrollment` | One API, tenant, and person binding with a fixed creation boundary. |
 | `sync_project_mappings` | Explicit local-to-API project mappings for the saved binding. |
+| `sync_outbox`, `sync_delivered` | One immutable pending transfer and the last confirmed revision of each delivered entry. |
 | `widget_rows` | Up to three tasks, their order, and the running session of each row. |
 
 `clients`, `projects`, and `sessions` have a unique `toggl_id` column for imported rows.
@@ -89,7 +90,10 @@ Migration 4 adds explicit enrollment and project mappings. See [native sync setu
 The account worker verifies identity and API project access before sending a setup result to the database worker.
 The database worker saves each setup action in one transaction. Existing enrollment cannot change its account or boundary.
 Imported history stays local. New completed native entries after the boundary are counted independently of their calendar dates.
-Setup does not copy entries to the queue or send them to the API.
+Setup alone does not copy entries to the queue or send them to the API.
+Migration 5 adds the frozen outbox and revision receipts. Start delivery enables the account worker to request eligible work from the database worker.
+The account worker stages and sends that work through its separate queue. Only a verified queue receipt permits native acknowledgement.
+The native worker keeps later edits and deletions until the earlier operation is confirmed. Remote edits are not downloaded in this step.
 
 Pause sets the stop time of the session and clears the session of the row in one transaction.
 A session under one second is deleted instead of kept.

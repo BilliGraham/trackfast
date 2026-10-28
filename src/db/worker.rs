@@ -11,6 +11,8 @@ use super::{Import, ImportCount, ProjectDraft, Store};
 use crate::entries::{Snapshot, Task};
 
 pub enum Command {
+    PrepareDelivery(trackfast_sync::Scope),
+    ConfirmDelivery(trackfast_sync::Scope, uuid::Uuid),
     Enroll(trackfast_sync::Scope),
     MapProject(trackfast_sync::Scope, i64, uuid::Uuid),
     AddTask(Task, Timestamp),
@@ -37,6 +39,12 @@ pub enum Saved {
 }
 
 pub enum Event {
+    DeliveryPrepared(
+        trackfast_sync::Scope,
+        Option<Box<trackfast_sync::transfer::Transfer>>,
+    ),
+    DeliveryConfirmed,
+    DeliveryFailed(String),
     SetupSaved,
     SetupFailed(String),
     Saved(Saved),
@@ -104,6 +112,23 @@ fn run(
     };
     publish(&store, loaded_from);
     while let Ok(command) = commands.recv() {
+        let command = match command {
+            Command::PrepareDelivery(scope) => {
+                match store.prepare_delivery(&scope) {
+                    Ok(transfer) => notify(Event::DeliveryPrepared(scope, transfer.map(Box::new))),
+                    Err(error) => notify(Event::DeliveryFailed(error.to_string())),
+                }
+                continue;
+            }
+            Command::ConfirmDelivery(scope, operation) => {
+                match store.confirm_delivery(&scope, operation) {
+                    Ok(()) => notify(Event::DeliveryConfirmed),
+                    Err(error) => notify(Event::DeliveryFailed(error.to_string())),
+                }
+                continue;
+            }
+            other => other,
+        };
         let setup = matches!(&command, Command::Enroll(_) | Command::MapProject(..));
         let saved = match &command {
             Command::StartEntry(_, _) => Some(Saved::Started),
@@ -113,6 +138,7 @@ fn run(
             _ => None,
         };
         let result = match command {
+            Command::PrepareDelivery(_) | Command::ConfirmDelivery(..) => unreachable!(),
             Command::Enroll(scope) => store.enroll(&scope),
             Command::MapProject(scope, local, remote) => store.map_project(&scope, local, remote),
             Command::SaveEntry(entry) => store.save_entry(&entry),

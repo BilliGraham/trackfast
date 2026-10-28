@@ -67,6 +67,8 @@ pub enum ImportState {
 
 #[derive(Default)]
 pub struct State {
+    pub delivery_active: bool,
+    pub delivery_message: Option<String>,
     pub setup_busy: bool,
     pub sync_projects: Option<(
         trackfast_sync::Scope,
@@ -102,6 +104,8 @@ pub struct Drafts {
 }
 
 pub enum Action {
+    StartDelivery,
+    StopDelivery,
     SyncSetup(crate::account::SetupRequest),
     SignIn,
     CancelSignIn,

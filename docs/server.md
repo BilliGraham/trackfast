@@ -62,7 +62,7 @@ The server implements personal settings, project listing, and explicit project a
 Project membership accepts only people configured in this tenant. The binary configures one person.
 Development test hosts can configure more credentials through `AppState::development`.
 The separate `sync-client/` library now uses this API. It checks the account before sending entries.
-The native app is not connected. Shared hosting remains a separate task.
+The native app supports explicit delivery through a frozen outbox. Shared hosting remains a separate task.
 
 ## Storage and tests
 

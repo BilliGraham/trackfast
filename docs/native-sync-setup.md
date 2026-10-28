@@ -1,7 +1,7 @@
 # Native sync setup
 
 This step saves an account binding, a first-sync boundary, and explicit project mappings in the native database.
-It does not send time entries or change API projects. Queue delivery remains the next step.
+Setup does not send time entries or change API projects. Use [Start delivery](native-delivery.md) after setup to send new work.
 
 ## Prepare new work
 
@@ -39,8 +39,8 @@ Later delivery must check API permissions again because access can change after 
 
 There is no automatic mapping by project name. Archived projects cannot receive new mappings.
 Saved mappings cannot be reassigned in this pilot step. This prevents pending work from silently changing destination.
-The planned delivery step must retain work with an unmapped project until a mapping exists.
-Entries without a project will use the API's unassigned entry option.
+Delivery retains work with an unmapped project until a mapping exists.
+Entries without a project use the API's unassigned entry option.
 
 ## Validation
 
@@ -56,6 +56,6 @@ macOS checks did not run. Live enrollment and API project selection remain user 
 
 ## Next step
 
-Connect the native database to the durable queue with replay-safe transfer and confirmation.
-Preserve recorded rounding, stable entry keys, edits, and deletion records across failures.
-Do not treat these setup records as evidence that any entry reached the API.
+The native database now connects to the durable queue through a frozen outbox. See [native delivery](native-delivery.md).
+Native conflict review and remote-edit reconciliation remain next.
+Do not treat setup records as evidence that any entry reached the API.

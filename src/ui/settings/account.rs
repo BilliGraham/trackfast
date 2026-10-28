@@ -26,7 +26,7 @@ pub fn show(ui: &mut egui::Ui, account: &View, drafts: &mut Drafts, actions: &mu
             Status::Failed => "The account needs attention.",
         });
         if account.status != Status::Unconfigured {
-            ui.weak("Account connection only. Time entries are still saved on this computer.");
+            ui.weak("Time tracking stays available offline. Control entry delivery in sync setup below.");
             ui.add_space(8.0);
             if matches!(account.status, Status::SignedOut | Status::Failed) {
                 ui.label("Google desktop client secret (if supplied)");

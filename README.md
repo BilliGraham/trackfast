@@ -8,7 +8,7 @@ Phase 1 defines [the API contract](docs/api-contract.md) and [delivery roadmap](
 The app remains local while the API develops. Internal teams can later build other clients against the same API.
 The GitHub repository is BilliGraham/trackfast. The user selected public visibility.
 The separate [development API](docs/server.md) stores completed timed and duration-only entries in Postgres.
-It supports local development credentials or Google pilot sessions. The desktop account can connect to it. Time entries remain local.
+It supports local development credentials or Google pilot sessions. The desktop app can send new entries after explicit sync setup and Start delivery.
 Phase 3 starts with a separate [durable operation queue](docs/sync-client.md).
 The queue can create, edit, and delete timed and duration entries with optional projects through the local development API.
 It can retrieve entry pages, assigned projects, and ordered remote changes, including deletions.
@@ -18,7 +18,7 @@ The API and queue preserve captured rounding settings for offline entries.
 The desktop app still uses its existing local database.
 The database now retains stable entry identities, change revisions, and deletion records for the planned sync connection.
 Settings now provides explicit [sync setup](docs/native-sync-setup.md) for the account, first-sync boundary, and project mappings.
-Setup does not enable entry uploads. Queue delivery remains the next step.
+Setup does not itself enable uploads. [Native delivery](docs/native-delivery.md) sends new mapped work only after Start delivery.
 An isolated [Google sign-in check](docs/google-signin.md) can validate the pilot registration. The separate API session check is described in [API sessions](docs/api-sessions.md).
 The API now has [personal settings](docs/settings.md) for rounding, the weekly target, and the visual indicator.
 Defaults are five-minute rounding, 35 hours per week, and the progress indicator. The native app has separate local settings with the same defaults.
@@ -135,4 +135,4 @@ The native app remains on local storage. Shared hosting is not enabled.
 
 The separate queue client now has [secure session handling](docs/client-sessions.md).
 It stores refresh credentials in the operating system credential store and supports renewal, restart recovery, and sign-out cleanup.
-The native app is not connected to this client yet.
+The native app uses this client for explicit delivery through a frozen outbox.

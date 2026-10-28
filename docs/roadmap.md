@@ -22,7 +22,7 @@ See server.md for supported operations, authentication limits, and Postgres chec
 At the user's request, phase 3 now has a separate durable queue and local HTTP transport in `sync-client/`.
 Create, edit, and delete retries preserve their keys across queue restarts. Conflicts retain local work.
 See sync-client.md for its scope and the remaining connection work.
-Phase 2 API and app prerequisites remain incomplete. The queue does not connect the daily-use app yet.
+The native app now supports explicit delivery of new local work. Remote-edit reconciliation remains incomplete.
 Review the open decisions in api-contract.md before implementing dependent behaviour.
 The user approved half-interval ties rounding up, visible zero totals without export, and setting changes for new entries only.
 Personal settings and duration rounding now work in the API. New accounts default to five minutes, 35 weekly hours, and the progress indicator.
@@ -30,7 +30,7 @@ Existing entries retain their applied rounding interval. The native app now has 
 The local app also has saved drafts during writes, entry correction, weekly targets, and a progress bar.
 Calendar drag selection and a separate Day blocks view now support direct entry creation.
 The native glass indicator was removed after user review.
-See local-refinement.md for the phase 2B changes and validation. The native app remains separate from the API.
+See local-refinement.md for the phase 2B changes and validation. Local tracking remains available without an API connection.
 Timed entries now use their start date in a saved time zone. Project membership checks and project pagination now work in the API.
 The queue now supports timed entries and project assignments. Entry-list pagination, ordered remote changes, and project administration now work.
 The queue retains remote conflicts and checkpoints across restarts. See retrieval-admin.md.
@@ -39,19 +39,20 @@ The API and queue now preserve an optional recording-time rounding choice across
 The first native connection will sync new work only. Existing history will remain local. New offline work will remain queued until confirmed.
 Native migration 3 now prepares stable entry identities, creation sequences, and retained deletion records.
 Native migration 4 now adds explicit enrollment, a fixed first-sync boundary, and project mappings through Settings.
-Native queue delivery remains next. These migrations do not send entries.
-Shared deployment and native connection work remain unfinished.
+Native migration 5 now connects new work to the queue through an immutable outbox. Start delivery is explicit.
+Native conflict review, remote-edit reconciliation, and live delivery checks remain next.
+Shared deployment and native conflict review remain unfinished.
 Calendar-based holiday and leave adjustments are later work. Keep the configurable base target separate from calculated weekly adjustments.
 The pilot will use Google sign-in with an explicit approved-user list. Google will not host Trackfast data.
 Workspace membership is not assumed. An isolated registration check is available in google-signin.md.
 The local pilot API now supports Google identity, stored membership, expiring sessions, renewal, and revocation.
-See api-sessions.md. The native app remains separate.
+See api-sessions.md for the API session lifecycle.
 The live API session check passed on Windows on October 27: sign-in, renewal with unchanged ownership, and sign-out all passed.
 The separate Rust client now supports secure refresh storage, renewal, restart recovery, and sign-out cleanup.
 See client-sessions.md. The live Rust check passed on Windows on October 27.
 It covered Google sign-in, credential restoration in a new client instance, renewal, and sign-out cleanup.
 The native sign-in interface now supports restoration, browser sign-in, and sign-out. See [native account connection](native-account.md).
-Native time-entry sync, shared hosting, and operational controls remain unfinished.
+Native remote-edit reconciliation, shared hosting, and operational controls remain unfinished.
 Start phase 2A with duration-only entry creation, retrieval, replacement, and deletion.
 Do not connect the native app to HTTP during phase 1 or phase 2.
 

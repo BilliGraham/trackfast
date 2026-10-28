@@ -30,7 +30,7 @@ Do not report Linux or macOS as tested until those checks run.
 - `src/entries/` holds the session types and the day and week logic that the views use.
 - `src/db/` owns the SQLite schema. Only the database worker thread opens the file.
 - `server/` owns the development HTTP service and separate Postgres schema. It does not open the desktop SQLite file.
-- `sync-client/` owns the separate phase 3 queue and loopback development transport. The native time-entry interface is not connected to this queue yet.
+- `sync-client/` owns the separate queue and loopback development transport. Native delivery uses a frozen outbox and requires an explicit Start delivery action.
 - Keep development credentials behind an explicit local-only mode. Production identity remains a separate task.
 - Make each user action one transaction. Never leave a session or widget row half changed.
 - Change the schema only by adding a step to `MIGRATIONS`. Never edit a released step.

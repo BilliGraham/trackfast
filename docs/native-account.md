@@ -2,7 +2,7 @@
 
 The native Settings screen now supports Google sign-in to the local Trackfast API.
 It can restore a saved session, check the connection, cancel browser sign-in, and sign out.
-This step connects the account only. The app does not send time entries, projects, or settings to the API.
+Sign-in connects the account only. Separate [sync setup and delivery](native-delivery.md) controls govern time-entry uploads.
 The first-sync boundary is not created by sign-in. The separate [sync setup](native-sync-setup.md) action saves that boundary and leaves existing history local.
 
 ## Configure the local pilot
@@ -54,7 +54,7 @@ The desktop client secret is used only for this attempt. The app clears the fiel
 An invalid secret produces a fixed error message. The app does not log the provider response.
 If sign-out fails, select **Retry sign-out** after the failed service becomes available.
 Closing the app preserves its stored session. Use **Sign out** to revoke the session and remove the stored refresh credential.
-The account card does not indicate whether entry sync is enabled. Entry sync is not enabled in this step.
+The account card does not indicate whether delivery is active. Use the separate Time-entry sync setup card to start, stop, and review delivery.
 
 ## Implementation and limits
 

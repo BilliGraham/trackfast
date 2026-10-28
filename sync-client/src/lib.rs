@@ -8,6 +8,7 @@ mod entry;
 mod remote;
 mod resolution;
 pub mod scheduler;
+pub mod transfer;
 pub use resolution::Conflict;
 pub mod session;
 pub mod transport;
@@ -18,6 +19,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/002_changes.sql"),
     include_str!("../migrations/003_remote.sql"),
     include_str!("../migrations/004_schedule.sql"),
+    include_str!("../migrations/005_transfers.sql"),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -338,6 +340,11 @@ impl Queue {
             .map_err(storage)?;
         tx.execute("DELETE FROM pending WHERE operation_id=?1", [&key])
             .map_err(storage)?;
+        tx.execute(
+            "UPDATE native_transfers SET confirmed=1 WHERE operation_id=?1",
+            [&key],
+        )
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
         Ok(())
     }
@@ -357,7 +364,8 @@ impl Queue {
     }
 }
 
-fn validate(entry: &DurationEntry) -> Result<(), Error> {
+/// Checks entry content before it becomes an immutable queue operation.
+pub fn validate(entry: &DurationEntry) -> Result<(), Error> {
     if entry
         .recorded_settings
         .as_ref()

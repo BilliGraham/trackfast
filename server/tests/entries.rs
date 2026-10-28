@@ -147,7 +147,11 @@ async fn durable_client_recovers_after_lost_mutation_responses() {
         collections::HashSet,
         sync::{Arc, Mutex},
     };
-    use trackfast_sync::{DurationEntry, Queue, Scope, transport::DevelopmentClient};
+    use trackfast_sync::{
+        DurationEntry, Queue, Scope,
+        transfer::{Change, Transfer},
+        transport::DevelopmentClient,
+    };
     let f = Fixture::new().await;
     let identity = f
         .send("GET", "/v1/me", Some(&f.token), None, None, Value::Null)
@@ -190,10 +194,15 @@ async fn durable_client_recovers_after_lost_mutation_responses() {
             description: "Recovery test".into(),
             original_seconds: 781,
         };
-        let key;
+        let key = Uuid::new_v4();
+        let transfer = Transfer {
+            operation_id: key,
+            entry_id: local.entry_id,
+            change: Change::Create(local.clone()),
+        };
         {
             let mut queue = Queue::open(&path, &scope).unwrap();
-            key = queue.enqueue(&local).unwrap();
+            assert!(!queue.stage_transfer(&transfer).unwrap());
             let wrong = DevelopmentClient::new(scope.clone(), &other).unwrap();
             assert!(wrong.sync(&mut queue).is_err());
             assert_eq!(queue.pending().unwrap()[0].operation_id, key);
@@ -207,24 +216,39 @@ async fn durable_client_recovers_after_lost_mutation_responses() {
             let client = DevelopmentClient::new(scope.clone(), &token).unwrap();
             assert_eq!(client.sync(&mut queue).unwrap(), 1);
             assert!(queue.pending().unwrap().is_empty());
+            assert!(queue.stage_transfer(&transfer).unwrap());
             assert_eq!(queue.entry(local.entry_id).unwrap(), Some(local.clone()));
             let changed = DurationEntry {
                 original_seconds: 10800,
                 ..local.clone()
             };
-            let edit = queue.replace(&changed).unwrap();
+            let edit = Uuid::new_v4();
+            let edit_transfer = Transfer {
+                operation_id: edit,
+                entry_id: local.entry_id,
+                change: Change::Replace(changed),
+            };
+            assert!(!queue.stage_transfer(&edit_transfer).unwrap());
             assert!(client.sync(&mut queue).is_err());
             drop(queue);
             let mut queue = Queue::open(&path, &scope).unwrap();
             assert_eq!(queue.pending().unwrap()[0].operation_id, edit);
             assert_eq!(client.sync(&mut queue).unwrap(), 1);
-            let deletion = queue.delete(local.entry_id).unwrap();
+            assert!(queue.stage_transfer(&edit_transfer).unwrap());
+            let deletion = Uuid::new_v4();
+            let delete_transfer = Transfer {
+                operation_id: deletion,
+                entry_id: local.entry_id,
+                change: Change::Delete,
+            };
+            assert!(!queue.stage_transfer(&delete_transfer).unwrap());
             assert!(client.sync(&mut queue).is_err());
             drop(queue);
             let mut queue = Queue::open(&path, &scope).unwrap();
             assert_eq!(queue.pending().unwrap()[0].operation_id, deletion);
             assert_eq!(client.sync(&mut queue).unwrap(), 1);
             assert_eq!(queue.entry(local.entry_id).unwrap(), None);
+            assert!(queue.stage_transfer(&delete_transfer).unwrap());
         }
         std::fs::remove_file(path).unwrap();
     })
