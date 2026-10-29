@@ -93,7 +93,7 @@ Imported history stays local. New completed native entries after the boundary ar
 Setup alone does not copy entries to the queue or send them to the API.
 Migration 5 adds the frozen outbox and revision receipts. Start delivery enables the account worker to request eligible work from the database worker.
 The account worker stages and sends that work through its separate queue. Only a verified queue receipt permits native acknowledgement.
-The native worker keeps later edits and deletions until the earlier operation is confirmed. Remote edits are not downloaded in this step.
+The native worker keeps later edits and deletions until the earlier operation is confirmed.
 Migration 6 adds an attention flag to the pending outbox. It stores no error text or credentials.
 Snapshots derive entry status from enrollment, mapping, revision receipts, and the attention flag.
 Receipt and attention events refresh the snapshot. Idle delivery checks do not reload it.
@@ -123,3 +123,12 @@ See `docs/toggl-import.md`.
 | ureq | Blocking HTTPS client with rustls, for the import and Google token exchange. |
 | serde | Decode Toggl JSON. |
 | base64 | Encode the basic authentication header for the import. |
+
+Native migration 8 adds `sync_remote_versions` and `sync_remote_receipts`.
+Queue migration 7 adds a saved download batch, a separate cursor, and acknowledgement tokens.
+The account worker first asks the native worker for an existing frozen transfer.
+After that transfer finishes, the worker drains saved downloads before preparing new outbound work.
+Each remote application checks native revisions and records its result in one transaction.
+The queue advances its baseline only after this result. It advances the cursor after the last item in the batch.
+The native database retains the API rounding policy for later edits, including an absent legacy recording snapshot.
+See [native remote sync](native-remote-sync.md) for conflict, mapping, and restart rules.

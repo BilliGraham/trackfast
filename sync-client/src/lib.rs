@@ -5,6 +5,9 @@ use std::path::Path;
 use uuid::Uuid;
 
 mod entry;
+pub mod native_download;
+#[cfg(test)]
+mod native_download_tests;
 pub mod native_resolution;
 #[cfg(test)]
 mod native_resolution_tests;
@@ -24,6 +27,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/004_schedule.sql"),
     include_str!("../migrations/005_transfers.sql"),
     include_str!("../migrations/006_native_resolutions.sql"),
+    include_str!("../migrations/007_native_download.sql"),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

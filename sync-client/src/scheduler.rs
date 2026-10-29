@@ -253,6 +253,24 @@ pub fn delivery_step(queue: &mut Queue, client: &mut SessionClient) -> Result<Sc
         uuid::Uuid::new_v4().as_u128() as u64,
     )
 }
+struct NativeDownload<'a>(&'a mut SessionClient);
+impl SyncBackend for NativeDownload<'_> {
+    fn sync(&mut self, _: &mut Queue) -> Result<usize, SessionError> {
+        Ok(0)
+    }
+    fn pull_changes(&mut self, queue: &mut Queue) -> Result<bool, SessionError> {
+        self.0.download_native_page(queue)
+    }
+}
+/// Saves one bounded remote page without changing the confirmed entry baseline.
+pub fn download_step(queue: &mut Queue, client: &mut SessionClient) -> Result<Schedule, Error> {
+    step(
+        queue,
+        &mut NativeDownload(client),
+        || chrono::Utc::now().timestamp_millis(),
+        uuid::Uuid::new_v4().as_u128() as u64,
+    )
+}
 impl SyncBackend for SessionClient {
     fn pull_changes(&mut self, queue: &mut Queue) -> Result<bool, SessionError> {
         SessionClient::pull_changes(self, queue)

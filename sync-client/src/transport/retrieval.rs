@@ -2,8 +2,10 @@ use super::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteChange {
+    #[serde(default)]
+    pub applied_settings: Option<crate::RecordedSettings>,
     pub entry_id: Uuid,
     pub version: i64,
     pub entry: Option<crate::Entry>,
@@ -142,6 +144,27 @@ impl DevelopmentClient {
         Ok(page.more)
     }
 
+    pub fn download_native_page(&self, queue: &mut Queue) -> Result<bool, SyncError> {
+        if queue.scope != self.scope {
+            return Err(SyncError::IdentityMismatch);
+        }
+        if queue
+            .next_native_remote()
+            .map_err(|_| SyncError::Storage)?
+            .is_some()
+        {
+            return Ok(true);
+        }
+        let previous = queue
+            .native_download_cursor()
+            .map_err(|_| SyncError::Storage)?;
+        let page = self.read_changes(previous)?;
+        let more = page.more || !page.changes.is_empty();
+        queue
+            .stage_native_page(previous, page)
+            .map_err(|_| SyncError::Storage)?;
+        Ok(more)
+    }
     pub fn read_changes(&self, previous: Option<Uuid>) -> Result<ChangePage, SyncError> {
         let value = self.get_page(&format!(
             "/v1/me/entry-changes?limit=100{}",
@@ -165,6 +188,7 @@ impl DevelopmentClient {
                     .filter(|v| *v > 0)
                     .ok_or(SyncError::InvalidReceipt)?;
                 let deleted = v["deleted"].as_bool().ok_or(SyncError::InvalidReceipt)?;
+                let mut applied_settings = None;
                 let entry = if deleted {
                     if v.get("entry") != Some(&Value::Null) {
                         return Err(SyncError::InvalidReceipt);
@@ -175,9 +199,13 @@ impl DevelopmentClient {
                     if remote.version != version || remote.entry.entry_id != entry_id {
                         return Err(SyncError::InvalidReceipt);
                     }
+                    applied_settings = Some(crate::RecordedSettings {
+                        rounding_interval_minutes: remote.rounding_interval_minutes,
+                    });
                     Some(remote.entry)
                 };
                 Ok(RemoteChange {
+                    applied_settings,
                     entry_id,
                     version,
                     entry,

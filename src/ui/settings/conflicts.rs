@@ -146,6 +146,7 @@ mod tests {
                         operation_id: operation,
                         action: "replace".into(),
                         remote: Some(RemoteChange {
+                            applied_settings: None,
                             entry_id: local.entry_id,
                             version: 2,
                             entry: Some(Entry {

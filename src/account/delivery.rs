@@ -96,7 +96,7 @@ impl Delivery {
         self.next = None;
         notify(Event::DeliveryState(
             true,
-            "Delivery started. New mapped work will be sent to Trackfast.".into(),
+            "Delivery started. New mapped work will be sent. API changes will be received.".into(),
         ));
     }
     pub fn stop(&mut self, notify: &impl Fn(Event)) {
@@ -114,7 +114,71 @@ impl Delivery {
     pub fn request(&mut self, config: &Config, notify: &impl Fn(Event)) {
         if self.active && !self.waiting && self.next.is_none_or(|next| Instant::now() >= next) {
             self.waiting = true;
-            notify(Event::RequestDelivery(config.scope()));
+            notify(Event::InspectDelivery(config.scope()));
+        }
+    }
+    pub fn inspected(
+        &mut self,
+        config: &Config,
+        client: &mut Option<SessionClient>,
+        scope: &Scope,
+        transfer: Option<&Transfer>,
+        notify: &impl Fn(Event),
+    ) {
+        if !self.active {
+            self.waiting = false;
+            return;
+        }
+        if transfer.is_some() {
+            self.deliver(config, client, scope, transfer, notify);
+            return;
+        }
+        let result = (|| -> Result<_, String> {
+            if scope != &config.scope() {
+                return Err("The download account does not match this connection.".into());
+            }
+            self.open_queue(scope)?
+                .next_native_remote()
+                .map_err(|e| e.to_string())
+        })();
+        match result {
+            Ok(Some(incoming)) => notify(Event::ApplyRemote(scope.clone(), Box::new(incoming))),
+            Ok(None) => notify(Event::RequestDelivery(scope.clone())),
+            Err(error) => {
+                self.waiting = false;
+                self.active = false;
+                notify(Event::DeliveryState(false, error));
+            }
+        }
+    }
+    pub fn remote_applied(
+        &mut self,
+        config: &Config,
+        scope: &Scope,
+        incoming: &trackfast_sync::native_download::Incoming,
+        outcome: &trackfast_sync::native_download::RemoteOutcome,
+        notify: &impl Fn(Event),
+    ) {
+        self.waiting = false;
+        let result = (|| -> Result<(), String> {
+            if scope != &config.scope() {
+                return Err("The download account does not match this connection.".into());
+            }
+            self.open_queue(scope)?
+                .acknowledge_native_remote(incoming, outcome)
+                .map_err(|e| e.to_string())?;
+            self.next = None;
+            if matches!(
+                outcome,
+                trackfast_sync::native_download::RemoteOutcome::Conflict(_)
+            ) {
+                return Err(pause_message(scheduler::Pause::Conflict));
+            }
+            Ok(())
+        })();
+        if let Err(error) = result {
+            self.active = false;
+            notify(Event::DeliveryState(false, error));
         }
     }
     pub fn deliver(
@@ -134,11 +198,35 @@ impl Delivery {
                 return Err("The delivery account does not match the saved setup.".into());
             }
             let Some(transfer) = transfer else {
-                self.next = Some(Instant::now() + Duration::from_secs(5));
-                notify(Event::DeliveryState(
-                    true,
-                    "All available mapped changes are confirmed. Unmapped work stays local.".into(),
-                ));
+                let resume = self.resume;
+                let queue = self.open_queue(scope)?;
+                if resume {
+                    queue
+                        .resume_sync(jiff::Timestamp::now().as_second().saturating_mul(1000))
+                        .map_err(|e| e.to_string())?;
+                }
+                if client.is_none() {
+                    *client = Some(SessionClient::local(scope.clone()).map_err(|e| e.to_string())?);
+                }
+                let schedule = scheduler::download_step(queue, client.as_mut().unwrap())
+                    .map_err(|e| e.to_string())?;
+                let pending = queue
+                    .next_native_remote()
+                    .map_err(|e| e.to_string())?
+                    .is_some();
+                self.resume = false;
+                if let Some(pause) = schedule.pause {
+                    return Err(pause_message(pause));
+                }
+                let delay = (schedule.next_attempt_ms
+                    - jiff::Timestamp::now().as_second().saturating_mul(1000))
+                .clamp(1000, 300000) as u64;
+                self.next = if pending {
+                    None
+                } else {
+                    Some(Instant::now() + Duration::from_millis(delay.min(5000)))
+                };
+                notify(Event::DeliveryState(true,if pending {"Applying downloaded API changes."} else if schedule.failures>0 {"The API is unavailable. Local work is preserved. Sync will retry."} else {"Available mapped changes are confirmed. Sync checks for API changes while delivery is active."}.into()));
                 return Ok(());
             };
             if self.queue.is_none() {
@@ -162,27 +250,7 @@ impl Delivery {
                 let schedule = scheduler::delivery_step(queue, client.as_mut().unwrap())
                     .map_err(|e| e.to_string())?;
                 if let Some(pause) = schedule.pause {
-                    let reason = match pause {
-                        scheduler::Pause::Authentication => {
-                            "Sign in again before restarting delivery."
-                        }
-                        scheduler::Pause::Conflict => {
-                            "The API entry changed. Select Review conflicts in Settings."
-                        }
-                        scheduler::Pause::Rejected => {
-                            "The API rejected a pending change. That change needs review."
-                        }
-                        scheduler::Pause::Storage => {
-                            "The credential store or queue is unavailable."
-                        }
-                        scheduler::Pause::InvalidResponse => "The API response failed validation.",
-                        scheduler::Pause::Configuration => {
-                            "The API account or configuration does not match."
-                        }
-                    };
-                    return Err(format!(
-                        "Delivery paused. {reason} Local work is preserved."
-                    ));
+                    return Err(pause_message(pause));
                 }
                 if !queue.stage_transfer(transfer).map_err(|e| e.to_string())? {
                     let delay = (schedule.next_attempt_ms
@@ -230,9 +298,152 @@ impl Delivery {
     }
 }
 
+fn pause_message(pause: scheduler::Pause) -> String {
+    let reason = match pause {
+        scheduler::Pause::Authentication => "Sign in again before restarting delivery.",
+        scheduler::Pause::Conflict => "The API entry changed. Select Review conflicts in Settings.",
+        scheduler::Pause::Rejected => {
+            "The API rejected a pending change. That change needs review."
+        }
+        scheduler::Pause::Storage => "The credential store or queue is unavailable.",
+        scheduler::Pause::InvalidResponse => "The API response failed validation.",
+        scheduler::Pause::Configuration => "The API account or configuration does not match.",
+    };
+    format!("Delivery paused. {reason} Local work is preserved.")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_frozen_receipt_finishes_before_an_unrelated_saved_download() {
+        let config = Config {
+            server: "http://127.0.0.1:8788".into(),
+            tenant_id: uuid::Uuid::new_v4(),
+            person_id: uuid::Uuid::new_v4(),
+            google_client_id: "test.apps.googleusercontent.com".into(),
+        };
+        let path = std::env::temp_dir().join(format!(
+            "trackfast-receipt-first-{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        let mut queue = Queue::open(&path, &config.scope()).unwrap();
+        let entry = trackfast_sync::Entry {
+            entry_id: uuid::Uuid::new_v4(),
+            entry_date: "2026-10-29".parse().unwrap(),
+            description: "Confirmed work".into(),
+            original_seconds: 600,
+            project_id: None,
+            timing: None,
+            recorded_settings: None,
+        };
+        let transfer = Transfer {
+            operation_id: uuid::Uuid::new_v4(),
+            entry_id: entry.entry_id,
+            change: trackfast_sync::transfer::Change::Create(entry),
+        };
+        queue.stage_transfer(&transfer).unwrap();
+        queue.confirm(transfer.operation_id).unwrap();
+        queue
+            .stage_native_page(
+                None,
+                trackfast_sync::transport::ChangePage {
+                    cursor: uuid::Uuid::new_v4(),
+                    more: false,
+                    changes: vec![trackfast_sync::transport::RemoteChange {
+                        entry_id: uuid::Uuid::new_v4(),
+                        version: 1,
+                        entry: None,
+                        applied_settings: None,
+                    }],
+                },
+            )
+            .unwrap();
+        let mut delivery = Delivery {
+            active: true,
+            queue: Some(queue),
+            ..Default::default()
+        };
+        let (tx, rx) = mpsc::channel();
+        let notify = |event| tx.send(event).unwrap();
+        delivery.inspected(
+            &config,
+            &mut None,
+            &config.scope(),
+            Some(&transfer),
+            &notify,
+        );
+        assert!(
+            matches!(rx.recv().unwrap(),Event::ConfirmDelivery(_,operation) if operation==transfer.operation_id)
+        );
+        assert!(
+            delivery
+                .queue
+                .as_mut()
+                .unwrap()
+                .next_native_remote()
+                .unwrap()
+                .is_some()
+        );
+        assert!(delivery.waiting);
+        drop(delivery);
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn download_is_applied_before_new_outbound_work() {
+        let config = Config {
+            server: "http://127.0.0.1:8788".into(),
+            tenant_id: uuid::Uuid::new_v4(),
+            person_id: uuid::Uuid::new_v4(),
+            google_client_id: "test.apps.googleusercontent.com".into(),
+        };
+        let path =
+            std::env::temp_dir().join(format!("trackfast-download-{}.db", uuid::Uuid::new_v4()));
+        let mut queue = Queue::open(&path, &config.scope()).unwrap();
+        queue
+            .stage_native_page(
+                None,
+                trackfast_sync::transport::ChangePage {
+                    cursor: uuid::Uuid::new_v4(),
+                    more: false,
+                    changes: vec![trackfast_sync::transport::RemoteChange {
+                        applied_settings: None,
+                        entry_id: uuid::Uuid::new_v4(),
+                        version: 1,
+                        entry: None,
+                    }],
+                },
+            )
+            .unwrap();
+        let incoming = queue.next_native_remote().unwrap().unwrap();
+        let mut delivery = Delivery {
+            queue: Some(queue),
+            ..Default::default()
+        };
+        let (tx, rx) = mpsc::channel();
+        let notify = |event| tx.send(event).unwrap();
+        delivery.start(&notify);
+        rx.recv().unwrap();
+        delivery.request(&config, &notify);
+        assert!(matches!(rx.recv().unwrap(), Event::InspectDelivery(_)));
+        delivery.inspected(&config, &mut None, &config.scope(), None, &notify);
+        assert!(matches!(rx.recv().unwrap(),Event::ApplyRemote(_,got) if *got==incoming));
+        delivery.request(&config, &notify);
+        assert!(rx.try_recv().is_err());
+        delivery.stop(&notify);
+        rx.recv().unwrap();
+        delivery.remote_applied(
+            &config,
+            &config.scope(),
+            &incoming,
+            &trackfast_sync::native_download::RemoteOutcome::Applied,
+            &notify,
+        );
+        delivery.request(&config, &notify);
+        assert!(!delivery.active);
+        drop(delivery);
+        std::fs::remove_file(path).unwrap();
+    }
     #[test]
     fn stopped_delivery_does_not_request_work_and_can_restart_after_failure() {
         let mut delivery = Delivery::default();
@@ -242,6 +453,9 @@ mod tests {
             person_id: uuid::Uuid::new_v4(),
             google_client_id: "test.apps.googleusercontent.com".into(),
         };
+        let path =
+            std::env::temp_dir().join(format!("trackfast-controller-{}.db", uuid::Uuid::new_v4()));
+        delivery.queue = Some(Queue::open(&path, &config.scope()).unwrap());
         let (tx, rx) = mpsc::channel();
         let notify = |event| tx.send(event).unwrap();
         delivery.request(&config, &notify);
@@ -249,7 +463,7 @@ mod tests {
         delivery.start(&notify);
         rx.recv().unwrap();
         delivery.request(&config, &notify);
-        assert!(matches!(rx.recv().unwrap(), Event::RequestDelivery(_)));
+        assert!(matches!(rx.recv().unwrap(), Event::InspectDelivery(_)));
         delivery.request(&config, &notify);
         assert!(rx.try_recv().is_err());
         delivery.stop(&notify);
@@ -259,6 +473,8 @@ mod tests {
         delivery.start(&notify);
         rx.recv().unwrap();
         delivery.request(&config, &notify);
-        assert!(matches!(rx.recv().unwrap(), Event::RequestDelivery(_)));
+        assert!(matches!(rx.recv().unwrap(), Event::InspectDelivery(_)));
+        drop(delivery);
+        std::fs::remove_file(path).unwrap();
     }
 }

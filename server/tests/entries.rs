@@ -12,6 +12,9 @@ use uuid::Uuid;
 #[path = "cases/recorded_settings.rs"]
 mod recorded_settings;
 
+#[path = "cases/native_download.rs"]
+mod native_download;
+
 #[path = "cases/conflict_resolution.rs"]
 mod conflict_resolution;
 

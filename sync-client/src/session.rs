@@ -342,6 +342,14 @@ impl SessionClient {
     pub fn read(&mut self, id: Uuid) -> Result<RemoteEntry, SessionError> {
         self.engine.action(|client| client.read(id))
     }
+    pub fn download_native_page(&mut self, queue: &mut Queue) -> Result<bool, SessionError> {
+        if queue.scope != self.engine.scope {
+            return Err(SessionError::IdentityMismatch);
+        }
+        self.engine
+            .action(|client| client.download_native_page(queue))
+    }
+
     pub fn read_changes(
         &mut self,
         cursor: Option<Uuid>,

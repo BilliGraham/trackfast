@@ -10,6 +10,16 @@ fn invalid() -> Error {
 }
 
 impl Store {
+    pub fn inspect_delivery(&mut self, scope: &Scope) -> Result<Option<Transfer>> {
+        let tx = self.connection.transaction()?;
+        enrollment::require_scope(&tx, scope)?;
+        let body: Option<String> = tx
+            .query_row("SELECT body FROM sync_outbox WHERE id=1", [], |r| r.get(0))
+            .optional()?;
+        body.map(|s| serde_json::from_str(&s).map_err(|_| invalid()))
+            .transpose()
+    }
+
     pub fn mark_delivery_attention(&mut self, scope: &Scope, operation: Uuid) -> Result<()> {
         let tx = self.connection.transaction()?;
         enrollment::require_scope(&tx, scope)?;
@@ -87,79 +97,7 @@ impl Store {
         let Some((key, revision, session_id, confirmed)) = candidate else {
             return Ok(None);
         };
-        let entry_id = Uuid::parse_str(&key).map_err(|_| invalid())?;
-        let change = if let Some(id) = session_id {
-            let session=tx.query_row("SELECT id,description,project_id,start_utc,stop_utc,duration_seconds,entry_date,time_zone,round_to_five FROM sessions WHERE id=?1",[id],read_session)?;
-            let project_id = if let Some(project) = session.project_id {
-                let remote: String = tx.query_row(
-                    "SELECT remote_project_id FROM sync_project_mappings WHERE local_project_id=?1",
-                    [project],
-                    |r| r.get(0),
-                )?;
-                Some(Uuid::parse_str(&remote).map_err(|_| invalid())?)
-            } else {
-                None
-            };
-            let timing = if session.details.duration_seconds.is_none() {
-                let zone = session.details.time_zone.clone().ok_or_else(invalid)?;
-                let time_zone = jiff::tz::TimeZone::get(&zone).map_err(|_| invalid())?;
-                Some(Timing {
-                    started_at: session
-                        .start
-                        .to_zoned(time_zone.clone())
-                        .strftime("%Y-%m-%dT%H:%M:%S%:z")
-                        .to_string(),
-                    stopped_at: session
-                        .stop
-                        .ok_or_else(invalid)?
-                        .to_zoned(time_zone)
-                        .strftime("%Y-%m-%dT%H:%M:%S%:z")
-                        .to_string(),
-                    time_zone: zone,
-                })
-            } else {
-                None
-            };
-            let entry = Entry {
-                entry_id,
-                project_id,
-                timing,
-                entry_date: session
-                    .details
-                    .entry_date
-                    .ok_or_else(invalid)?
-                    .to_string()
-                    .parse()
-                    .map_err(|_| invalid())?,
-                description: session.description.clone(),
-                original_seconds: u64::try_from(session.elapsed(Timestamp::UNIX_EPOCH).as_secs())
-                    .map_err(|_| invalid())?,
-                recorded_settings: Some(RecordedSettings {
-                    rounding_interval_minutes: session.details.round_to_five.then_some(5),
-                }),
-            };
-            trackfast_sync::validate(&entry).map_err(|_| invalid())?;
-            if confirmed == 0 {
-                Change::Create(entry)
-            } else {
-                Change::Replace(entry)
-            }
-        } else {
-            Change::Delete
-        };
-        let transfer = Transfer {
-            operation_id: Uuid::new_v4(),
-            entry_id,
-            change,
-        };
-        tx.execute(
-            "INSERT INTO sync_outbox(id,entry_key,revision,body) VALUES(1,?1,?2,?3)",
-            params![
-                key,
-                revision,
-                serde_json::to_string(&transfer).map_err(|_| invalid())?
-            ],
-        )?;
+        let transfer = freeze_delivery(&tx, &key, revision, session_id, confirmed)?;
         tx.commit()?;
         Ok(Some(transfer))
     }
@@ -187,4 +125,98 @@ impl Store {
         tx.commit()?;
         Ok(())
     }
+}
+
+pub(super) fn freeze_delivery(
+    tx: &Transaction<'_>,
+    key: &str,
+    revision: i64,
+    session_id: Option<i64>,
+    confirmed: i64,
+) -> Result<Transfer> {
+    let entry_id = Uuid::parse_str(key).map_err(|_| invalid())?;
+    let change = if let Some(id) = session_id {
+        let session=tx.query_row("SELECT id,description,project_id,start_utc,stop_utc,duration_seconds,entry_date,time_zone,round_to_five FROM sessions WHERE id=?1",[id],read_session)?;
+        let project_id = if let Some(project) = session.project_id {
+            let remote: String = tx.query_row(
+                "SELECT remote_project_id FROM sync_project_mappings WHERE local_project_id=?1",
+                [project],
+                |r| r.get(0),
+            )?;
+            Some(Uuid::parse_str(&remote).map_err(|_| invalid())?)
+        } else {
+            None
+        };
+        let timing = if session.details.duration_seconds.is_none() {
+            let zone = session.details.time_zone.clone().ok_or_else(invalid)?;
+            let time_zone = jiff::tz::TimeZone::get(&zone).map_err(|_| invalid())?;
+            Some(Timing {
+                started_at: session
+                    .start
+                    .to_zoned(time_zone.clone())
+                    .strftime("%Y-%m-%dT%H:%M:%S%:z")
+                    .to_string(),
+                stopped_at: session
+                    .stop
+                    .ok_or_else(invalid)?
+                    .to_zoned(time_zone)
+                    .strftime("%Y-%m-%dT%H:%M:%S%:z")
+                    .to_string(),
+                time_zone: zone,
+            })
+        } else {
+            None
+        };
+        let entry = Entry {
+            entry_id,
+            project_id,
+            timing,
+            entry_date: session
+                .details
+                .entry_date
+                .ok_or_else(invalid)?
+                .to_string()
+                .parse()
+                .map_err(|_| invalid())?,
+            description: session.description.clone(),
+            original_seconds: u64::try_from(session.elapsed(Timestamp::UNIX_EPOCH).as_secs())
+                .map_err(|_| invalid())?,
+            recorded_settings: match tx
+                .query_row(
+                    "SELECT recorded_settings FROM sync_remote_versions WHERE entry_key=?1",
+                    [key],
+                    |r| r.get::<_, String>(0),
+                )
+                .optional()?
+            {
+                Some(raw) => serde_json::from_str(&raw).map_err(|_| invalid())?,
+                None => Some(RecordedSettings {
+                    rounding_interval_minutes: session.details.round_to_five.then_some(5),
+                }),
+            },
+        };
+        trackfast_sync::validate(&entry).map_err(|_| invalid())?;
+        if confirmed == 0 {
+            Change::Create(entry)
+        } else {
+            Change::Replace(entry)
+        }
+    } else {
+        Change::Delete
+    };
+    let transfer = Transfer {
+        operation_id: Uuid::new_v4(),
+        entry_id,
+        change,
+    };
+    tx.execute(
+        "INSERT INTO sync_outbox(id,entry_key,revision,body) VALUES(1,?1,?2,?3)",
+        params![
+            key,
+            revision,
+            serde_json::to_string(&transfer).map_err(|_| invalid())?
+        ],
+    )?;
+
+    Ok(transfer)
 }

@@ -5,10 +5,10 @@ Its design is inspired by Toggl Track. It is not a Toggl client and uses no Togg
 The native app stores its data in local SQLite. An optional [pilot account connection](docs/native-account.md) supports Google sign-in to the local API.
 The target product has a shared API and a polished native reference client.
 Phase 1 defines [the API contract](docs/api-contract.md) and [delivery roadmap](docs/roadmap.md).
-The app remains local while the API develops. Internal teams can later build other clients against the same API.
+The app keeps local storage for offline use. Internal teams can build other clients against the same API.
 The GitHub repository is BilliGraham/trackfast. The user selected public visibility.
 The separate [development API](docs/server.md) stores completed timed and duration-only entries in Postgres.
-It supports local development credentials or Google pilot sessions. The desktop app can send new entries after explicit sync setup and Start delivery.
+It supports local development credentials or Google pilot sessions. After sync setup, Start delivery sends new local work and receives API entries.
 Phase 3 starts with a separate [durable operation queue](docs/sync-client.md).
 The queue can create, edit, and delete timed and duration entries with optional projects through the local development API.
 It can retrieve entry pages, assigned projects, and ordered remote changes, including deletions.
@@ -21,6 +21,8 @@ Settings now provides explicit [sync setup](docs/native-sync-setup.md) for the a
 Setup does not itself enable uploads. [Native delivery](docs/native-delivery.md) sends new mapped work only after Start delivery.
 Entries now show local, waiting, mapping, confirmed, or attention status. API confirmation is separate from Xero export.
 Settings provides [native conflict review](docs/native-conflicts.md) with explicit local, API, and copy choices.
+[Native remote sync](docs/native-remote-sync.md) receives bounded API batches and preserves progress across restarts.
+Unsent local changes require conflict review. Missing project mappings pause local application without discarding the downloaded batch.
 An isolated [Google sign-in check](docs/google-signin.md) can validate the pilot registration. The separate API session check is described in [API sessions](docs/api-sessions.md).
 The API now has [personal settings](docs/settings.md) for rounding, the weekly target, and the visual indicator.
 Defaults are five-minute rounding, 35 hours per week, and the progress indicator. The native app has separate local settings with the same defaults.

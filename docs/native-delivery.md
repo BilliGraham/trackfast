@@ -67,7 +67,8 @@ Transport failures use the queue's persistent retry schedule. Server retry deadl
 Authentication failures, invalid responses, rejected requests, storage failures, and conflicts stop delivery.
 The status message reports the pause. Local entries and pending operations remain available.
 
-Normal delivery sends changes only. Reviewed conflicts can apply one accepted API snapshot. General remote edits are not downloaded into native entries.
+Normal delivery now also receives [bounded remote changes](native-remote-sync.md).
+Clean entries accept API changes. Competing local edits require explicit conflict review.
 Edits and deletions use the version from the last confirmed API receipt. A newer remote version causes a conflict.
 No automatic overwrite or merge occurs. Settings now provides [native conflict review](native-conflicts.md) for explicit choices.
 Do not repeatedly restart a conflicted or rejected operation without resolving its cause.

@@ -322,6 +322,12 @@ impl App {
     fn receive(&mut self, ctx: &egui::Context) {
         while let Some(event) = self.account.receive() {
             match event {
+                crate::account::Event::InspectDelivery(scope) => {
+                    self.send(Command::InspectDelivery(scope))
+                }
+                crate::account::Event::ApplyRemote(scope, incoming) => {
+                    self.send(Command::ApplyRemote(scope, incoming))
+                }
                 crate::account::Event::ApplyResolution(scope, operation, resolution) => {
                     self.send(Command::ApplyResolution(scope, operation, resolution))
                 }
@@ -383,6 +389,12 @@ impl App {
         if let Some((_, events)) = &self.database {
             while let Some(event) = events.try_recv() {
                 match event {
+                    Event::DeliveryInspected(scope, transfer) => self
+                        .account
+                        .send(crate::account::Command::DeliveryInspected(scope, transfer)),
+                    Event::RemoteApplied(scope, incoming, outcome) => self.account.send(
+                        crate::account::Command::RemoteApplied(scope, incoming, outcome),
+                    ),
                     Event::DeliveryPrepared(scope, transfer) => self
                         .account
                         .send(crate::account::Command::Deliver(scope, transfer)),

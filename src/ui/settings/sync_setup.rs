@@ -13,7 +13,7 @@ pub fn show(ui: &mut egui::Ui, state: &State, drafts: &mut Drafts, actions: &mut
         ui.set_width(ui.available_width().min(460.0));
         ui.strong("Time-entry sync setup");
         ui.add_space(8.0);
-        ui.weak("Setup saves the account, starting point, and project mappings. Start delivery when you are ready to send new work.");
+        ui.weak("Setup saves the account, starting point, and project mappings. Start delivery when you are ready to send new work and receive API changes.");
         let connected = state.account.status == Status::Connected;
         if !connected { ui.label("Sign in before you prepare sync or select API projects."); }
         if let Some(enrollment) = &data.enrollment {
@@ -25,10 +25,10 @@ pub fn show(ui: &mut egui::Ui, state: &State, drafts: &mut Drafts, actions: &mut
                 }
             });
             if let Some(message)=&state.delivery_message { ui.label(message); }
-            ui.weak("Delivery sends new mapped work to Trackfast. Start it again after restarting the app. Conflicts pause delivery.");
+            ui.weak("Delivery sends new mapped work and receives your API entries. Start it again after restarting the app. Conflicts pause delivery.");
             ui.label("The starting point is saved. Existing entries remain local.");
             ui.weak("Timers that were already running at setup remain local. Imported history remains local.");
-            ui.label(format!("{} new completed entries saved locally since setup.", enrollment.new_entries));
+            ui.label(format!("{} completed entries available locally since setup.", enrollment.new_entries));
             ui.weak("Signing out or restarting does not reset this starting point.");
             ui.add_space(8.0);
             ui.add_enabled_ui(connected && !state.setup_busy, |ui| {

@@ -12,6 +12,7 @@ fn a_late_receipt_does_not_discard_a_newer_pulled_change() {
             None,
             Uuid::new_v4(),
             &[crate::transport::RemoteChange {
+                applied_settings: None,
                 entry_id: local.entry_id,
                 version: 2,
                 entry: Some(newer.clone()),
@@ -34,6 +35,7 @@ fn remote_pages_keep_pending_work_and_commit_the_checkpoint_with_changes() {
     let pending = queue.replace(&edit).unwrap();
     let checkpoint = Uuid::new_v4();
     let change = crate::transport::RemoteChange {
+        applied_settings: None,
         entry_id: local.entry_id,
         version: 2,
         entry: None,
@@ -58,6 +60,7 @@ fn remote_pages_keep_pending_work_and_commit_the_checkpoint_with_changes() {
     queue.connection.execute_batch("CREATE TRIGGER reject_checkpoint BEFORE UPDATE ON remote_checkpoint BEGIN SELECT RAISE(ABORT,'Test failure'); END;").unwrap();
     let remote = entry();
     let change = crate::transport::RemoteChange {
+        applied_settings: None,
         entry_id: remote.entry_id,
         version: 1,
         entry: Some(remote.clone()),

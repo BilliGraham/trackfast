@@ -37,6 +37,7 @@ fn fixture() -> (Queue, Transfer, RemoteChange) {
     queue.stage_transfer(&transfer).unwrap();
     queue.mark_conflict(transfer.operation_id).unwrap();
     let remote = RemoteChange {
+        applied_settings: None,
         entry_id: entry.entry_id,
         version: 2,
         entry: Some(Entry {

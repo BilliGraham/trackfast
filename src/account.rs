@@ -192,6 +192,12 @@ pub struct View {
     pub problem: Option<String>,
 }
 pub enum Command {
+    DeliveryInspected(Scope, Option<Box<trackfast_sync::transfer::Transfer>>),
+    RemoteApplied(
+        Scope,
+        Box<trackfast_sync::native_download::Incoming>,
+        Box<trackfast_sync::native_download::RemoteOutcome>,
+    ),
     ReviewConflicts(Scope),
     ResolveConflict(
         Scope,
@@ -210,6 +216,8 @@ pub enum Command {
     Stop,
 }
 pub enum Event {
+    InspectDelivery(Scope),
+    ApplyRemote(Scope, Box<trackfast_sync::native_download::Incoming>),
     Conflicts(Scope, Vec<trackfast_sync::Conflict>, bool),
     ConflictError(String),
     ApplyResolution(
@@ -339,6 +347,12 @@ fn run(commands: Receiver<Command>, notify: &impl Fn(Event), cancel: Arc<AtomicB
             }
             Command::StartDelivery => delivery.start(notify),
             Command::StopDelivery => delivery.stop(notify),
+            Command::RemoteApplied(scope, incoming, outcome) => {
+                delivery.remote_applied(&config, &scope, &incoming, &outcome, notify)
+            }
+            Command::DeliveryInspected(scope, transfer) => {
+                delivery.inspected(&config, &mut client, &scope, transfer.as_deref(), notify)
+            }
             Command::DeliveryConfirmed => delivery.confirmed(),
             Command::Deliver(scope, transfer) => {
                 delivery.deliver(&config, &mut client, &scope, transfer.as_deref(), notify)

@@ -84,6 +84,7 @@ fn conflict(queue: &mut Queue, entry: &Entry, version: i64, remote: Option<Entry
             queue.checkpoint().unwrap(),
             Uuid::new_v4(),
             &[RemoteChange {
+                applied_settings: None,
                 entry_id: entry.entry_id,
                 version,
                 entry: remote,

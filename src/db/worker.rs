@@ -11,6 +11,11 @@ use super::{Import, ImportCount, ProjectDraft, Store};
 use crate::entries::{Snapshot, Task};
 
 pub enum Command {
+    InspectDelivery(trackfast_sync::Scope),
+    ApplyRemote(
+        trackfast_sync::Scope,
+        Box<trackfast_sync::native_download::Incoming>,
+    ),
     ApplyResolution(
         trackfast_sync::Scope,
         uuid::Uuid,
@@ -45,6 +50,15 @@ pub enum Saved {
 }
 
 pub enum Event {
+    DeliveryInspected(
+        trackfast_sync::Scope,
+        Option<Box<trackfast_sync::transfer::Transfer>>,
+    ),
+    RemoteApplied(
+        trackfast_sync::Scope,
+        Box<trackfast_sync::native_download::Incoming>,
+        Box<trackfast_sync::native_download::RemoteOutcome>,
+    ),
     DeliveryPrepared(
         trackfast_sync::Scope,
         Option<Box<trackfast_sync::transfer::Transfer>>,
@@ -119,6 +133,21 @@ fn run(
     publish(&store, loaded_from);
     while let Ok(command) = commands.recv() {
         let command = match command {
+            Command::InspectDelivery(scope) => {
+                match store.inspect_delivery(&scope) {
+                    Ok(transfer) => notify(Event::DeliveryInspected(scope, transfer.map(Box::new))),
+                    Err(error) => notify(Event::DeliveryFailed(error.to_string())),
+                }
+                continue;
+            }
+            Command::ApplyRemote(scope, incoming) => {
+                match store.apply_remote(&scope, &incoming) {
+                    Ok(outcome) => notify(Event::RemoteApplied(scope, incoming, Box::new(outcome))),
+                    Err(error) => notify(Event::DeliveryFailed(error.to_string())),
+                }
+                publish(&store, loaded_from);
+                continue;
+            }
             Command::ApplyResolution(scope, operation, resolution) => {
                 match store.apply_resolution(&scope, operation, &resolution) {
                     Ok(()) => notify(Event::DeliveryConfirmed),
@@ -160,7 +189,9 @@ fn run(
             _ => None,
         };
         let result = match command {
-            Command::ApplyResolution(..)
+            Command::InspectDelivery(_)
+            | Command::ApplyRemote(..)
+            | Command::ApplyResolution(..)
             | Command::PrepareDelivery(_)
             | Command::ConfirmDelivery(..)
             | Command::DeliveryAttention(..) => unreachable!(),

@@ -22,7 +22,7 @@ See server.md for supported operations, authentication limits, and Postgres chec
 At the user's request, phase 3 now has a separate durable queue and local HTTP transport in `sync-client/`.
 Create, edit, and delete retries preserve their keys across queue restarts. Conflicts retain local work.
 See sync-client.md for its scope and the remaining connection work.
-The native app now supports explicit delivery of new local work. Remote-edit reconciliation remains incomplete.
+The native app now supports explicit delivery of new local work and bounded remote-change application.
 Review the open decisions in api-contract.md before implementing dependent behaviour.
 The user approved half-interval ties rounding up, visible zero totals without export, and setting changes for new entries only.
 Personal settings and duration rounding now work in the API. New accounts default to five minutes, 35 weekly hours, and the progress indicator.
@@ -43,7 +43,8 @@ Native migration 5 now connects new work to the queue through an immutable outbo
 Native migration 6 retains delivery attention state. Entry views now show the status of each current revision.
 The first live Windows delivery preserved 780 recorded seconds and 900 effective seconds with one receipt and one audit event.
 Native conflict review now provides explicit local, API, and copy choices with restart recovery.
-General remote-edit reconciliation and further live delivery checks remain next. Shared deployment remains unfinished.
+Native migration 8 and queue migration 7 now retain remote batches, application receipts, and version progress.
+See [native remote sync](native-remote-sync.md). A live two-client sync check is next. Shared deployment remains unfinished.
 Calendar-based holiday and leave adjustments are later work. Keep the configurable base target separate from calculated weekly adjustments.
 The pilot will use Google sign-in with an explicit approved-user list. Google will not host Trackfast data.
 Workspace membership is not assumed. An isolated registration check is available in google-signin.md.
@@ -54,7 +55,7 @@ The separate Rust client now supports secure refresh storage, renewal, restart r
 See client-sessions.md. The live Rust check passed on Windows on October 27.
 It covered Google sign-in, credential restoration in a new client instance, renewal, and sign-out cleanup.
 The native sign-in interface now supports restoration, browser sign-in, and sign-out. See [native account connection](native-account.md).
-Native remote-edit reconciliation, shared hosting, and operational controls remain unfinished.
+Shared hosting and operational controls remain unfinished. Xero export remains a separate phase.
 Start phase 2A with duration-only entry creation, retrieval, replacement, and deletion.
 Do not connect the native app to HTTP during phase 1 or phase 2.
 

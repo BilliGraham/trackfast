@@ -56,7 +56,11 @@ impl Store {
                 Change::Create(e) | Change::Replace(e) => e,
                 Change::Delete => return Err(Error("A deletion cannot be copied.".into())),
             };
-            write_session(&tx, &from_api(&tx, local, None)?, None)?;
+            let mut copy = from_api(&tx, local, None)?;
+            if local.recorded_settings.is_none() {
+                copy.details.round_to_five=tx.query_row("SELECT round_to_five FROM sync_remote_versions WHERE entry_key=?1", [&key], |r| r.get::<_,Option<bool>>(0)).optional()?.flatten().ok_or_else(|| Error("The saved rounding rule is unavailable. The local copy was not created.".into()))?;
+            }
+            write_session(&tx, &copy, None)?;
         }
         let later_deletion = session_id.is_none()
             && current_revision != frozen_revision
@@ -67,7 +71,11 @@ impl Store {
             if remote.entry_id != transfer.entry_id {
                 return Err(Error("The API entry does not match this conflict.".into()));
             }
-            let entry = from_api(&tx, remote, current.as_ref().and_then(|s| s.project_id))?;
+            let entry = from_remote(
+                &tx,
+                &resolution.remote,
+                current.as_ref().and_then(|s| s.project_id),
+            )?;
             let id = write_session(&tx, &entry, session_id)?;
             if session_id.is_none() {
                 tx.execute(
@@ -82,6 +90,27 @@ impl Store {
         if !later_deletion {
             tx.execute("INSERT INTO sync_delivered(entry_key,revision) SELECT entry_key,revision FROM session_sync_identity WHERE entry_key=?1 ON CONFLICT(entry_key) DO UPDATE SET revision=excluded.revision", [&key])?;
         }
+        let settings = serde_json::to_string(
+            &resolution
+                .remote
+                .entry
+                .as_ref()
+                .and_then(|e| e.recorded_settings.clone()),
+        )
+        .map_err(|_| Error("The API settings are invalid.".into()))?;
+        let applied = resolution
+            .remote
+            .applied_settings
+            .as_ref()
+            .or_else(|| {
+                resolution
+                    .remote
+                    .entry
+                    .as_ref()
+                    .and_then(|e| e.recorded_settings.as_ref())
+            })
+            .map(|s| s.rounding_interval_minutes == Some(5));
+        tx.execute("INSERT INTO sync_remote_versions(entry_key,version,recorded_settings,round_to_five) VALUES(?1,?2,?3,?4) ON CONFLICT(entry_key) DO UPDATE SET version=excluded.version,recorded_settings=excluded.recorded_settings,round_to_five=COALESCE(excluded.round_to_five,sync_remote_versions.round_to_five)", params![key,resolution.remote.version,settings,applied])?;
         tx.execute("DELETE FROM sync_outbox WHERE id=1", [])?;
         tx.execute(
             "INSERT INTO sync_applied_resolutions VALUES(?1)",
@@ -92,7 +121,11 @@ impl Store {
     }
 }
 
-fn from_api(tx: &Transaction<'_>, entry: &Entry, preferred: Option<i64>) -> Result<Session> {
+pub(super) fn from_api(
+    tx: &Transaction<'_>,
+    entry: &Entry,
+    preferred: Option<i64>,
+) -> Result<Session> {
     trackfast_sync::validate(entry)
         .map_err(|_| Error("The API entry failed validation.".into()))?;
     let project_id = if let Some(remote) = entry.project_id {
@@ -105,10 +138,9 @@ fn from_api(tx: &Transaction<'_>, entry: &Entry, preferred: Option<i64>) -> Resu
         } else if ids.len() == 1 {
             Some(ids[0])
         } else {
-            return Err(Error(
-                "Map the API project to one local project in Settings, then start delivery again."
-                    .into(),
-            ));
+            return Err(Error(format!(
+                "Map API project {remote} to one local project in Settings, then start delivery again."
+            )));
         }
     } else {
         None
@@ -166,7 +198,27 @@ fn from_api(tx: &Transaction<'_>, entry: &Entry, preferred: Option<i64>) -> Resu
     })
 }
 
-fn write_session(tx: &Transaction<'_>, entry: &Session, id: Option<i64>) -> Result<i64> {
+pub(super) fn write_session(tx: &Transaction<'_>, entry: &Session, id: Option<i64>) -> Result<i64> {
     tx.execute("INSERT INTO sessions(id,description,project_id,start_utc,stop_utc,duration_seconds,entry_date,time_zone,round_to_five) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET description=excluded.description,project_id=excluded.project_id,start_utc=excluded.start_utc,stop_utc=excluded.stop_utc,duration_seconds=excluded.duration_seconds,entry_date=excluded.entry_date,time_zone=excluded.time_zone,round_to_five=excluded.round_to_five", params![id,entry.description,entry.project_id,seconds(entry.start),entry.stop.map(seconds),entry.details.duration_seconds,entry.details.entry_date.map(|d|d.to_string()),entry.details.time_zone,entry.details.round_to_five])?;
     Ok(id.unwrap_or_else(|| tx.last_insert_rowid()))
+}
+
+pub(super) fn from_remote(
+    tx: &Transaction<'_>,
+    remote: &trackfast_sync::transport::RemoteChange,
+    preferred: Option<i64>,
+) -> Result<Session> {
+    let mut entry = remote
+        .entry
+        .clone()
+        .ok_or_else(|| Error("The API entry is unavailable.".into()))?;
+    if entry.recorded_settings.is_none() {
+        entry.recorded_settings = Some(remote.applied_settings.clone().ok_or_else(|| {
+            Error(
+                "The API entry has no rounding metadata. Refresh the conflict before retrying."
+                    .into(),
+            )
+        })?);
+    }
+    from_api(tx, &entry, preferred)
 }

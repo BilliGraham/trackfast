@@ -1,7 +1,7 @@
 # Native conflict review
 
 Settings provides conflict review for native entries whose delivery paused after an API version conflict.
-General remote-change sync and Xero export remain separate work.
+[Remote-change sync](native-remote-sync.md) also sends competing edits to this review. Xero export remains separate work.
 
 ## Review and choose
 
@@ -39,7 +39,7 @@ Failed native writes retain the outbox and leave the reviewed result available f
 The queue retains resolution snapshots for recovery. They contain entry data, not credentials.
 
 Conflict reads do not update unrelated queue entries or the normal remote-change checkpoint.
-Only explicit review reads the change feed. Each click reads at most 100 changes.
+Explicit review reads separate pages from normal delivery. Each click reads at most 100 changes.
 Choices stay disabled while pages remain. Failed reads keep pending work and require another explicit review attempt.
 Signing out clears the visible review. Stored pending work remains bound to the original account.
 

@@ -333,6 +333,7 @@ fn remote_resolution_preserves_later_edits_and_replays_without_duplicates() {
     let resolution = Resolution {
         choice: Choice::Remote,
         remote: RemoteChange {
+            applied_settings: None,
             entry_id: transfer.entry_id,
             version: 2,
             entry: Some(api),
@@ -385,6 +386,7 @@ fn accepted_remote_deletion_and_copy_retain_native_identity_rules() {
         let resolution = Resolution {
             choice,
             remote: RemoteChange {
+                applied_settings: None,
                 entry_id: transfer.entry_id,
                 version: 2,
                 entry: None,
@@ -423,6 +425,7 @@ fn conflict_application_rolls_back_and_preserves_later_deletions() {
     let resolution = Resolution {
         choice: Choice::Remote,
         remote: RemoteChange {
+            applied_settings: None,
             entry_id: transfer.entry_id,
             version: 2,
             entry: Some(api),
@@ -486,6 +489,7 @@ fn conflict_choice_survives_both_files_reopening_before_native_application() {
         remote.description = "Accepted remote".into();
         queue
             .record_native_conflicts(&[RemoteChange {
+                applied_settings: None,
                 entry_id: transfer.entry_id,
                 version: 1,
                 entry: Some(remote),
