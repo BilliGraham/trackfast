@@ -425,6 +425,15 @@ impl App {
                                 if let Some(draft) = self.drafts.entry.take()
                                     && let Ok(entry) = draft.session()
                                 {
+                                    if draft.block_entry {
+                                        self.state.calendar.week =
+                                            entry.details.entry_date.map(|day| {
+                                                crate::entries::summary::week_start(
+                                                    day,
+                                                    crate::entries::BEGINNING_OF_WEEK,
+                                                )
+                                            });
+                                    }
                                     self.send(Command::LoadFrom(entry.start));
                                 }
                             }

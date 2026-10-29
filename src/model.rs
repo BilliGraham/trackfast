@@ -209,6 +209,18 @@ mod tests {
 mod entry_form_tests {
     use super::*;
     #[test]
+    fn day_block_defaults_to_the_local_day_and_keeps_three_hours_together() {
+        let now = "2026-10-28T23:30:00Z".parse().unwrap();
+        let tz = jiff::tz::TimeZone::get("Africa/Johannesburg").unwrap();
+        let mut form = EntryDraft::day_block(now, &tz);
+        form.duration = "3:00".into();
+        let entry = form.session().unwrap();
+        assert_eq!(entry.details.entry_date.unwrap().to_string(), "2026-10-29");
+        assert_eq!(entry.details.duration_seconds, Some(10800));
+        assert!(!form.timed);
+        assert_eq!(entry.description, "Work");
+    }
+    #[test]
     fn form_accepts_exact_duration_and_timed_work_without_splitting() {
         let now = "2026-10-26T09:03:00Z".parse().unwrap();
         let mut form = EntryDraft::new(now, &jiff::tz::TimeZone::UTC);
@@ -246,6 +258,7 @@ mod entry_form_tests {
 
 #[derive(Clone)]
 pub struct EntryDraft {
+    pub block_entry: bool,
     pub focus_description: bool,
     pub id: i64,
     pub description: String,
@@ -260,6 +273,15 @@ pub struct EntryDraft {
     pub round_to_five: Option<bool>,
 }
 impl EntryDraft {
+    pub fn day_block(now: jiff::Timestamp, tz: &jiff::tz::TimeZone) -> Self {
+        Self {
+            block_entry: true,
+            duration: "1:00".into(),
+            focus_description: false,
+            ..Self::new(now, tz)
+        }
+    }
+
     pub fn calendar_range(day: Date, a: u16, b: u16, tz: &jiff::tz::TimeZone) -> Option<Self> {
         let (start, end) = (a.min(b), a.max(b));
         if start == end || end > 1440 {
@@ -283,6 +305,7 @@ impl EntryDraft {
     pub fn new(now: jiff::Timestamp, tz: &jiff::tz::TimeZone) -> Self {
         let local = now.to_zoned(tz.clone());
         Self {
+            block_entry: false,
             focus_description: true,
             id: 0,
             description: String::new(),
@@ -320,7 +343,7 @@ impl EntryDraft {
     pub fn session(&self) -> Result<crate::entries::Session, String> {
         use crate::entries::{EntryDetails, Session};
         let fail = |message: &str| message.to_owned();
-        if self.description.trim().is_empty() {
+        if self.description.trim().is_empty() && !self.block_entry {
             return Err(fail("Enter a description."));
         }
         let date: Date = self
@@ -374,7 +397,11 @@ impl EntryDraft {
         };
         Ok(Session {
             id: self.id,
-            description: self.description.trim().into(),
+            description: if self.block_entry && self.description.trim().is_empty() {
+                "Work".into()
+            } else {
+                self.description.trim().into()
+            },
             project_id: self.project_id,
             start,
             stop: Some(stop),

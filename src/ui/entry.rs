@@ -4,7 +4,9 @@ use eframe::egui;
 
 pub fn show(ctx: &egui::Context, state: &State, drafts: &mut Drafts, actions: &mut Vec<Action>) {
     if let Some(form) = &mut drafts.entry {
-        egui::Window::new(if form.id == 0 {
+        egui::Window::new(if form.block_entry {
+            "Add time"
+        } else if form.id == 0 {
             "Add entry"
         } else {
             "Edit entry"
@@ -16,14 +18,42 @@ pub fn show(ctx: &egui::Context, state: &State, drafts: &mut Drafts, actions: &m
         .show(ctx, |ui| {
             super::style::apply(ui);
             ui.add_enabled_ui(!state.saving, |ui| {
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut form.timed, false, "Duration only");
-                    ui.selectable_value(&mut form.timed, true, "Start and stop");
-                });
+                if form.block_entry {
+                    ui.weak("Log completed work for this day.");
+                    field(ui, "Date", &mut form.date);
+                    ui.horizontal_wrapped(|ui| {
+                        for (label, duration) in [
+                            ("30 min", "0:30"),
+                            ("1 hour", "1:00"),
+                            ("2 hours", "2:00"),
+                            ("3 hours", "3:00"),
+                            ("4 hours", "4:00"),
+                        ] {
+                            if ui
+                                .selectable_label(form.duration == duration, label)
+                                .clicked()
+                            {
+                                form.duration = duration.into();
+                            }
+                        }
+                    });
+                    field(ui, "Duration (H:MM)", &mut form.duration);
+                } else {
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut form.timed, false, "Duration only");
+                        ui.selectable_value(&mut form.timed, true, "Start and stop");
+                    });
+                }
                 ui.add_space(10.0);
-                ui.label("Description");
+                ui.label(if form.block_entry {
+                    "Description (optional)"
+                } else {
+                    "Description"
+                });
                 let description = ui.add(
-                    egui::TextEdit::singleline(&mut form.description).desired_width(f32::INFINITY),
+                    egui::TextEdit::singleline(&mut form.description)
+                        .hint_text(if form.block_entry { "Work" } else { "" })
+                        .desired_width(f32::INFINITY),
                 );
                 if form.focus_description {
                     description.request_focus();
@@ -55,7 +85,7 @@ pub fn show(ctx: &egui::Context, state: &State, drafts: &mut Drafts, actions: &m
                     date_time(ui, "Start", &mut form.date, &mut form.start);
                     date_time(ui, "Stop", &mut form.end_date, &mut form.stop);
                     field(ui, "Time zone", &mut form.time_zone);
-                } else {
+                } else if !form.block_entry {
                     field(ui, "Date", &mut form.date);
                     field(ui, "Duration (H:MM:SS)", &mut form.duration);
                 }
@@ -84,7 +114,7 @@ pub fn show(ctx: &egui::Context, state: &State, drafts: &mut Drafts, actions: &m
                     ui.colored_label(ui.visuals().warn_fg_color, problem);
                 }
                 ui.separator();
-                if form.id == 0 {
+                if form.id == 0 && !form.block_entry {
                     let can_start = !form.description.trim().is_empty()
                         && state.data.as_ref().is_some_and(|d| d.has_room());
                     ui.horizontal(|ui| {
@@ -105,7 +135,14 @@ pub fn show(ctx: &egui::Context, state: &State, drafts: &mut Drafts, actions: &m
                         input.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter)
                     });
                     if ui
-                        .add_enabled(valid, egui::Button::new("Save entry"))
+                        .add_enabled(
+                            valid,
+                            egui::Button::new(if form.block_entry {
+                                "Add time"
+                            } else {
+                                "Save entry"
+                            }),
+                        )
                         .clicked()
                         || (valid && shortcut)
                     {
@@ -166,6 +203,101 @@ fn date_time(ui: &mut egui::Ui, label: &str, date: &mut String, time: &mut Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn day_block_preset_saves_three_hours_without_timer_controls() {
+        for dark in [true, false] {
+            for size in [egui::vec2(760.0, 480.0), egui::vec2(1150.0, 720.0)] {
+                let ctx = egui::Context::default();
+                ctx.set_visuals(if dark {
+                    egui::Visuals::dark()
+                } else {
+                    egui::Visuals::light()
+                });
+                let now = "2026-10-29T10:00:00Z".parse().unwrap();
+                let mut drafts = Drafts {
+                    entry: Some(crate::model::EntryDraft::day_block(
+                        now,
+                        &jiff::tz::TimeZone::UTC,
+                    )),
+                    ..Default::default()
+                };
+                let state = State {
+                    data: Some(Default::default()),
+                    ..Default::default()
+                };
+                let mut actions = Vec::new();
+                let mut preset = egui::Pos2::ZERO;
+                for frame in 0..6 {
+                    let mut input = egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                        ..Default::default()
+                    };
+                    if frame == 3 || frame == 4 {
+                        input.events = vec![
+                            egui::Event::PointerMoved(preset),
+                            egui::Event::PointerButton {
+                                pos: preset,
+                                button: egui::PointerButton::Primary,
+                                pressed: frame == 3,
+                                modifiers: Default::default(),
+                            },
+                        ];
+                    }
+                    if frame == 5 {
+                        input.events.push(egui::Event::Key {
+                            key: egui::Key::Enter,
+                            physical_key: None,
+                            pressed: true,
+                            repeat: false,
+                            modifiers: egui::Modifiers::COMMAND,
+                        });
+                    }
+                    let mut output =
+                        ctx.run_ui(input, |_| show(&ctx, &state, &mut drafts, &mut actions));
+                    output.textures_delta.clear();
+                    if frame == 2 {
+                        let mut found = false;
+                        for shape in &output.shapes {
+                            if let egui::Shape::Text(text) = &shape.shape {
+                                assert!(
+                                    !["Start now", "Start and stop", "Time zone"]
+                                        .contains(&text.galley.text())
+                                );
+                                if text.galley.text() == "3 hours" {
+                                    preset =
+                                        text.galley.rect.translate(text.pos.to_vec2()).center();
+                                    found = true;
+                                }
+                                if ["Add time", "Cancel"].contains(&text.galley.text()) {
+                                    assert!(shape.clip_rect.contains_rect(
+                                        text.galley.rect.translate(text.pos.to_vec2())
+                                    ));
+                                }
+                            }
+                        }
+                        assert!(found, "The three-hour preset must be visible.");
+                    }
+                }
+                assert_eq!(
+                    actions
+                        .iter()
+                        .filter(|a| matches!(a, Action::SaveEntry))
+                        .count(),
+                    1
+                );
+                let entry = drafts.entry.as_ref().unwrap().session().unwrap();
+                let mut store = crate::db::Store::open_in_memory().unwrap();
+                store.save_entry(&entry).unwrap();
+                let snapshot = store.snapshot(jiff::Timestamp::UNIX_EPOCH).unwrap();
+                assert_eq!(snapshot.sessions.len(), 1);
+                assert_eq!(snapshot.sessions[0].details.duration_seconds, Some(10800));
+                assert_eq!(
+                    snapshot.sessions[0].details.entry_date.unwrap().to_string(),
+                    "2026-10-29"
+                );
+            }
+        }
+    }
     #[test]
     fn timed_entry_buttons_fit_without_scrolling() {
         for size in [egui::vec2(1150.0, 720.0), egui::vec2(760.0, 480.0)] {

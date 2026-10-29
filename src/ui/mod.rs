@@ -62,7 +62,7 @@ pub fn shell(ui: &mut egui::Ui, state: &State, drafts: &mut Drafts, clock: &Cloc
         && state.data.is_some()
         && ui.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::N))
     {
-        actions.push(Action::EditEntry(None));
+        actions.push(new_entry_action(state, clock));
     }
     egui::Panel::left("navigation")
         .exact_size(172.0)
@@ -133,6 +133,16 @@ fn problem(ui: &mut egui::Ui, state: &State) {
     }
 }
 
+fn new_entry_action(state: &State, clock: &Clock) -> Action {
+    if state.screen == Screen::Timer && state.timer_view == TimerView::DayBlocks {
+        Action::DraftEntry(Box::new(crate::model::EntryDraft::day_block(
+            clock.now, &clock.tz,
+        )))
+    } else {
+        Action::EditEntry(None)
+    }
+}
+
 fn timer(
     ui: &mut egui::Ui,
     state: &State,
@@ -143,8 +153,15 @@ fn timer(
 ) {
     ui.horizontal(|ui| {
         ui.heading("Timer");
-        if ui.button("Add entry").clicked() {
-            actions.push(Action::EditEntry(None));
+        if ui
+            .button(if state.timer_view == TimerView::DayBlocks {
+                "Add time"
+            } else {
+                "Add entry"
+            })
+            .clicked()
+        {
+            actions.push(new_entry_action(state, clock));
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let (label, action) = if state.widget_open {
@@ -680,6 +697,45 @@ mod entry_label_tests {
 #[cfg(test)]
 mod day_view_tests {
     use super::*;
+    #[test]
+    fn add_shortcut_in_day_blocks_uses_today_even_when_viewing_an_old_week() {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(style::fonts());
+        let mut state = State {
+            timer_view: TimerView::DayBlocks,
+            data: Some(tests::sample_snapshot()),
+            ..Default::default()
+        };
+        state.calendar.week = Some("2026-10-05".parse().unwrap());
+        let input = egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::N,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::COMMAND,
+            }],
+            ..Default::default()
+        };
+        let mut actions = vec![];
+        let mut output = ctx.run_ui(input, |ui| {
+            actions = shell(
+                ui,
+                &state,
+                &mut Drafts::default(),
+                &Clock {
+                    now: "2026-10-28T23:30:00Z".parse().unwrap(),
+                    tz: TimeZone::get("Africa/Johannesburg").unwrap(),
+                },
+            );
+        });
+        output.textures_delta.clear();
+        let Action::DraftEntry(form) = &actions[0] else {
+            panic!("Expected the Day blocks form")
+        };
+        assert!(form.block_entry);
+        assert_eq!(form.date, "2026-10-29");
+    }
     #[test]
     fn day_blocks_show_durations_without_clock_ranges() {
         let ctx = egui::Context::default();

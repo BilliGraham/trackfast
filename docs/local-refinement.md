@@ -23,6 +23,17 @@ Use the entry menu to edit completed timed entries. Select a duration entry abov
 The list menu also provides deletion with confirmation. Stop a running timer before editing or deleting it.
 New or edited project assignments require an active project.
 
+## Add time in Day blocks
+
+Select **Add time** in the Timer header while Day blocks is selected.
+The form defaults to today in the local time zone, even when an older week is visible.
+Choose 30 minutes, one, two, three, or four hours, or enter a custom duration.
+Select **Add time** to save one completed duration entry. No start or stop time is required.
+Description and project are optional. A blank description is saved as **Work**.
+The date remains editable. The per-day **Add duration** buttons use the same form for their selected day.
+Ctrl+N or Cmd+N opens this form from Day blocks. Ctrl+Enter or Cmd+Enter saves it.
+After saving, Day blocks shows the week that contains the saved date.
+
 ## Rounding and totals
 
 The default rounds new entries to the nearest five minutes. Exact half-intervals round up.
@@ -91,3 +102,12 @@ macOS was not compiled, tested, or visually checked in this step. The app suppor
 The later form-size fix passed 67 native tests on Windows, plus formatting, Clippy, and a build.
 Its new layout check failed before the fix and passed afterward at 1150 by 720 and 760 by 480 pixels.
 Linux and macOS checks were not repeated for this layout fix.
+
+## Day blocks form validation
+
+On October 29, 2026, the new draft and shortcut tests failed before implementation.
+The form test selects the three-hour preset and saves one duration entry for the local day.
+It checks both themes at 760 × 480 and 1150 × 720 pixels, with visible save and cancel controls.
+Windows and Linux passed all 120 native tests, including the seven timer tests. Both builds passed.
+Windows formatting and Clippy checks passed. The live visual helper failed during initialization on both attempts.
+Live visual checks and macOS checks did not run.

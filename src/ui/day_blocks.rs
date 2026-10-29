@@ -36,7 +36,7 @@ pub fn show(
                                 .add_sized([width, 30.0], egui::Button::new("+ Add duration"))
                                 .clicked()
                             {
-                                let mut draft = EntryDraft::new(clock.now, &clock.tz);
+                                let mut draft = EntryDraft::day_block(clock.now, &clock.tz);
                                 draft.date = day.to_string();
                                 draft.end_date = day.to_string();
                                 actions.push(Action::DraftEntry(Box::new(draft)));
