@@ -118,3 +118,6 @@ Day blocks and calendar duration rows show **Delete entry** directly.
 Timed calendar blocks include **Delete entry** in their three-dot menu.
 Each action opens a confirmation dialog. Stop a running timer before deleting its entry.
 Deletions for synced entries wait for API delivery.
+
+Calendar menu buttons use a 32-pixel target, limited by the block bounds.
+Clicks in this target open the actions menu instead of the entry editor.

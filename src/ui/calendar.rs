@@ -12,7 +12,6 @@ const HEADER_HEIGHT: f32 = 54.0;
 const MIN_BLOCK_HEIGHT: f32 = 18.0;
 const BLOCK_PADDING: f32 = 6.0;
 const MENU_WIDTH: f32 = 16.0;
-const MENU_HEIGHT: f32 = 18.0;
 const DOT_RADIUS: f32 = 1.5;
 const NOW_LINE: Color32 = Color32::from_rgb(226, 85, 85);
 const DEFAULT_SCROLL_HOUR: f32 = 7.5;
@@ -494,12 +493,32 @@ fn entry_block(
     } else {
         clock.local_time(entry.start + entry.elapsed(clock.now))
     };
+    let menu_centre = pos2(
+        rect.right() - BLOCK_PADDING - DOT_RADIUS,
+        if room_for_duration {
+            rect.bottom() - BLOCK_PADDING - duration_height / 2.0
+        } else {
+            first_line_centre
+        },
+    );
+    let menu_rect = Rect::from_min_max(
+        pos2(
+            (rect.right() - 32.0).max(rect.left()),
+            (menu_centre.y - 16.0).max(rect.top()),
+        ),
+        pos2(rect.right(), (menu_centre.y + 16.0).min(rect.bottom())),
+    );
     let entry_response = ui.interact(
         rect,
         ui.id().with(("entry", entry.start, block.start as i32)),
         Sense::click(),
     );
-    if entry_response.clicked() && !entry.is_running() {
+    if entry_response.clicked()
+        && !entry.is_running()
+        && !entry_response
+            .interact_pointer_pos()
+            .is_some_and(|point| menu_rect.contains(point))
+    {
         actions.push(Action::EditEntry(Some(entry.id)));
     }
     entry_response.on_hover_ui(|ui| {
@@ -514,40 +533,28 @@ fn entry_block(
             summary::clock(entry.elapsed(clock.now))
         ));
     });
-    // The dots line up with the duration row in tall blocks and with the
-    // title in short ones, inset by the same padding as the text.
-    let menu_centre = pos2(
-        rect.right() - BLOCK_PADDING - DOT_RADIUS,
-        if room_for_duration {
-            rect.bottom() - BLOCK_PADDING - duration_height / 2.0
-        } else {
-            first_line_centre
-        },
-    );
-    let menu_rect =
-        Rect::from_center_size(menu_centre, vec2(MENU_WIDTH, MENU_HEIGHT)).intersect(rect);
-    ui.scope_builder(
-        egui::UiBuilder::new()
-            .id_salt("entry-actions")
-            .max_rect(menu_rect),
-        |ui| {
-            ui.spacing_mut().button_padding = egui::Vec2::ZERO;
-            ui.spacing_mut().interact_size = menu_rect.size();
-            super::actions::menu_on_hover(ui, "Entry actions", rect, |ui| {
-                continue_action(ui, snapshot, entry, actions);
-                if ui
-                    .add_enabled(!entry.is_running(), egui::Button::new("Edit entry"))
-                    .clicked()
-                {
-                    actions.push(Action::EditEntry(Some(entry.id)));
-                    ui.close();
-                }
-                if super::actions::delete_entry(ui, entry, actions) {
-                    ui.close();
-                }
-            });
-        },
-    );
+    let menu_response = ui.interact(menu_rect, ui.id().with("entry-actions"), Sense::click());
+    menu_response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Entry actions"));
+    let popup = egui::Popup::menu(&menu_response).show(|ui| {
+        continue_action(ui, snapshot, entry, actions);
+        if ui
+            .add_enabled(!entry.is_running(), egui::Button::new("Edit entry"))
+            .clicked()
+        {
+            actions.push(Action::EditEntry(Some(entry.id)));
+            ui.close();
+        }
+        if super::actions::delete_entry(ui, entry, actions) {
+            ui.close();
+        }
+    });
+    if ui.rect_contains_pointer(rect) || popup.is_some() {
+        for offset in [-5.0, 0.0, 5.0] {
+            ui.painter()
+                .circle_filled(menu_centre + vec2(0.0, offset), DOT_RADIUS, style::TEXT);
+        }
+    }
 }
 
 fn now_line(
@@ -699,6 +706,87 @@ mod tests {
                 .all(|pair| pair[0].x == pair[1].x && pair[0].y < pair[1].y)
         );
         dots[1]
+    }
+
+    #[test]
+    fn full_calendar_dots_do_not_open_the_editor() {
+        let ctx = egui::Context::default();
+        crate::ui::install_fonts(&ctx);
+        let mut data = snapshot(0);
+        data.sessions.truncate(1);
+        let clock = Clock {
+            now: NOW.parse().unwrap(),
+            tz: jiff::tz::TimeZone::UTC,
+        };
+        let draw = |events| {
+            let mut actions = vec![];
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(1150.0, 720.0))),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    show(
+                        ui,
+                        &State::default(),
+                        &data,
+                        &clock,
+                        "2026-10-12".parse().unwrap(),
+                        &mut actions,
+                    );
+                },
+            );
+            output.textures_delta.clear();
+            (actions, output)
+        };
+        draw(vec![]);
+        let (_, output) = draw(vec![]);
+        let title = output
+            .shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::Shape::Text(t) if t.galley.text() == "Task 1" => Some(t.pos),
+                _ => None,
+            })
+            .unwrap();
+        let (_, output) = draw(vec![egui::Event::PointerMoved(title + vec2(3.0, 3.0))]);
+        let point = menu_position(&output);
+        let mut events = click(point);
+        let release = events.pop().unwrap();
+        draw(events);
+        let (actions, _) = draw(vec![release]);
+        assert!(
+            actions.is_empty(),
+            "Clicking the menu must not open the editor."
+        );
+        let (_, output) = draw(vec![]);
+        assert!(output.shapes.iter().any(
+            |s| matches!(&s.shape, egui::Shape::Text(t) if t.galley.text() == "Delete entry")
+        ));
+    }
+
+    #[test]
+    fn every_calendar_dot_opens_the_menu_without_editing() {
+        for end in [10.0, 120.0] {
+            for offset in [-5.0, 0.0, 5.0] {
+                let ctx = egui::Context::default();
+                crate::ui::install_fonts(&ctx);
+                let (_, output) = draw_entry(&ctx, 0, end, hover_block());
+                let point = menu_position(&output) + vec2(-10.0, offset);
+                let mut events = click(point);
+                let release = events.pop().unwrap();
+                let (pressed, _) = draw_entry(&ctx, 0, end, events);
+                assert!(pressed.is_empty());
+                let (actions, _) = draw_entry(&ctx, 0, end, vec![release]);
+                assert!(
+                    actions.is_empty(),
+                    "The dots must not edit the entry: {end}, {offset}"
+                );
+                let (_, output) = draw_entry(&ctx, 0, end, vec![]);
+                assert!(output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text() == "Delete entry")));
+            }
+        }
     }
 
     #[test]
