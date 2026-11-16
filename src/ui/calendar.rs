@@ -86,14 +86,22 @@ pub fn show(
                     .max_height(100.0)
                     .show(ui, |ui| {
                         for entry in durations {
-                            ui.horizontal(|ui| {
-                                ui.weak(entry.date(&clock.tz).strftime("%a %-d %b").to_string());
-                                if ui.button(super::description(entry)).clicked() {
-                                    actions.push(Action::EditEntry(Some(entry.id)));
-                                }
-                                super::duration(ui, &summary::clock(entry.effective(clock.now)));
-                                super::project_label(ui, snapshot, entry.project_id);
-                                super::sync_status_label(ui, snapshot, entry.id);
+                            ui.push_id(entry.id, |ui| {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.weak(
+                                        entry.date(&clock.tz).strftime("%a %-d %b").to_string(),
+                                    );
+                                    if ui.button(super::description(entry)).clicked() {
+                                        actions.push(Action::EditEntry(Some(entry.id)));
+                                    }
+                                    super::duration(
+                                        ui,
+                                        &summary::clock(entry.effective(clock.now)),
+                                    );
+                                    super::project_label(ui, snapshot, entry.project_id);
+                                    super::sync_status_label(ui, snapshot, entry.id);
+                                    super::actions::delete_entry(ui, entry, actions);
+                                });
                             });
                         }
                     });
@@ -534,6 +542,9 @@ fn entry_block(
                     actions.push(Action::EditEntry(Some(entry.id)));
                     ui.close();
                 }
+                if super::actions::delete_entry(ui, entry, actions) {
+                    ui.close();
+                }
             });
         },
     );
@@ -688,6 +699,32 @@ mod tests {
                 .all(|pair| pair[0].x == pair[1].x && pair[0].y < pair[1].y)
         );
         dots[1]
+    }
+
+    #[test]
+    fn calendar_menu_requests_delete_confirmation() {
+        let ctx = egui::Context::default();
+        crate::ui::install_fonts(&ctx);
+        let (_, output) = draw_entry(&ctx, 0, 120.0, hover_block());
+        draw_entry(&ctx, 0, 120.0, click(menu_position(&output)));
+        let (_, output) = draw_entry(&ctx, 0, 120.0, vec![]);
+        let item = output
+            .shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::Shape::Text(t) if t.galley.text() == "Delete entry" => {
+                    Some(t.pos + t.galley.rect.center().to_vec2())
+                }
+                _ => None,
+            })
+            .expect("The calendar menu must contain Delete entry.");
+        let (actions, _) = draw_entry(&ctx, 0, 120.0, click(item));
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, Action::ReviewDeletion(4)))
+        );
+        assert!(!actions.iter().any(|a| matches!(a, Action::DeleteEntry(_))));
     }
 
     #[test]

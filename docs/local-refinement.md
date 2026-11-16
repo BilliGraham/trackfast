@@ -111,3 +111,10 @@ It checks both themes at 760 × 480 and 1150 × 720 pixels, with visible save and 
 Windows and Linux passed all 120 native tests, including the seven timer tests. Both builds passed.
 Windows formatting and Clippy checks passed. The live visual helper failed during initialization on both attempts.
 Live visual checks and macOS checks did not run.
+
+## Delete entries
+
+Day blocks and calendar duration rows show **Delete entry** directly.
+Timed calendar blocks include **Delete entry** in their three-dot menu.
+Each action opens a confirmation dialog. Stop a running timer before deleting its entry.
+Deletions for synced entries wait for API delivery.

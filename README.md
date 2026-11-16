@@ -44,6 +44,7 @@ See [local entries and settings](docs/local-refinement.md) for the entry rules a
 The entry form expands to fit its fields and action buttons without an internal scroll area.
 In Day blocks, select **Add time**, choose **3 hours**, then select **Add time** to save one block for today.
 The form also supports a custom duration, another date, an optional description, and a project.
+To remove a completed block, select **Delete entry**, then confirm. Calendar blocks have this action in their three-dot menu.
 
 ## Widget
 

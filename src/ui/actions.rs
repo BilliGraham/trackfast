@@ -1,5 +1,20 @@
 use eframe::egui;
 
+pub(super) fn delete_entry(
+    ui: &mut egui::Ui,
+    entry: &crate::entries::Session,
+    actions: &mut Vec<crate::model::Action>,
+) -> bool {
+    let clicked = ui
+        .add_enabled(!entry.is_running(), egui::Button::new("Delete entry"))
+        .on_disabled_hover_text("Stop the timer before deleting this entry.")
+        .clicked();
+    if clicked {
+        actions.push(crate::model::Action::ReviewDeletion(entry.id));
+    }
+    clicked
+}
+
 pub(super) fn menu(
     ui: &mut egui::Ui,
     label: &str,

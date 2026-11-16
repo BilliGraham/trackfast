@@ -104,6 +104,7 @@ pub fn show(
                                                     ));
                                                 }
                                             });
+                                            super::actions::delete_entry(ui, entry, actions);
                                         });
                                     response.response.on_hover_text(format!(
                                         "Recorded {}",
@@ -116,4 +117,107 @@ pub fn show(
                 }
             });
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn block_and_calendar_duration_deletion_requires_confirmation() {
+        for calendar in [false, true] {
+            for dark in [false, true] {
+                for width in [760.0, 1150.0] {
+                    for running in [false, true] {
+                        let ctx = egui::Context::default();
+                        crate::ui::install_fonts(&ctx);
+                        ctx.set_visuals(if dark {
+                            egui::Visuals::dark()
+                        } else {
+                            egui::Visuals::light()
+                        });
+                        let mut data = crate::ui::tests::sample_snapshot();
+                        let mut entry = data.sessions[1].clone();
+                        entry.start = "2026-10-12T09:00:00Z".parse().unwrap();
+                        entry.stop = (!running).then(|| "2026-10-12T12:00:00Z".parse().unwrap());
+                        entry.details.duration_seconds = Some(10800);
+                        data.sessions = vec![entry];
+                        data.rows.clear();
+                        let clock = Clock {
+                            now: "2026-10-16T13:00:00Z".parse().unwrap(),
+                            tz: jiff::tz::TimeZone::UTC,
+                        };
+                        let draw = |events| {
+                            let mut actions = Vec::new();
+                            let mut output = ctx.run_ui(
+                                egui::RawInput {
+                                    screen_rect: Some(egui::Rect::from_min_size(
+                                        egui::Pos2::ZERO,
+                                        egui::vec2(width, 720.0),
+                                    )),
+                                    events,
+                                    ..Default::default()
+                                },
+                                |ui| {
+                                    let shown = "2026-10-12".parse().unwrap();
+                                    if calendar {
+                                        crate::ui::calendar::show(
+                                            ui,
+                                            &Default::default(),
+                                            &data,
+                                            &clock,
+                                            shown,
+                                            &mut actions,
+                                        );
+                                    } else {
+                                        show(ui, &data, &clock, shown, &mut actions);
+                                    }
+                                },
+                            );
+                            output.textures_delta.clear();
+                            (output, actions)
+                        };
+                        draw(vec![]);
+                        let (output, _) = draw(vec![]);
+                        let point = output
+                            .shapes
+                            .iter()
+                            .find_map(|shape| match &shape.shape {
+                                egui::Shape::Text(text) if text.galley.text() == "Delete entry" => {
+                                    Some(text.pos + text.galley.rect.center().to_vec2())
+                                }
+                                _ => None,
+                            })
+                            .expect("Delete entry must be visible.");
+                        let (_, actions) = draw(vec![
+                            egui::Event::PointerMoved(point),
+                            egui::Event::PointerButton {
+                                pos: point,
+                                button: egui::PointerButton::Primary,
+                                pressed: true,
+                                modifiers: Default::default(),
+                            },
+                            egui::Event::PointerButton {
+                                pos: point,
+                                button: egui::PointerButton::Primary,
+                                pressed: false,
+                                modifiers: Default::default(),
+                            },
+                        ]);
+                        assert_eq!(
+                            actions
+                                .iter()
+                                .any(|action| matches!(action, Action::ReviewDeletion(2))),
+                            !running
+                        );
+                        assert!(
+                            !actions
+                                .iter()
+                                .any(|action| matches!(action, Action::DeleteEntry(_)))
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

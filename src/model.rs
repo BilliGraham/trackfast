@@ -121,6 +121,7 @@ pub enum Action {
     CancelEntry,
     SaveEntry,
     DeleteEntry(i64),
+    ReviewDeletion(i64),
     SaveSettings,
     Navigate(Screen),
     OpenWidget,

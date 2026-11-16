@@ -214,6 +214,17 @@ impl App {
                     }
                 }
             }
+            Action::ReviewDeletion(id) => {
+                if !self.state.saving
+                    && self.state.data.as_ref().is_some_and(|data| {
+                        data.sessions
+                            .iter()
+                            .any(|entry| entry.id == id && !entry.is_running())
+                    })
+                {
+                    self.drafts.delete_entry = Some(id);
+                }
+            }
             Action::DeleteEntry(id) => {
                 if !self.state.saving {
                     self.state.saving = true;
@@ -531,6 +542,35 @@ impl eframe::App for App {
 #[cfg(test)]
 mod account_tests {
     use super::*;
+
+    #[test]
+    fn deletion_review_opens_only_for_completed_entries_and_cancel_preserves_data() {
+        let (account, _) = crate::account::Account::for_test();
+        let mut app = App {
+            account,
+            state: State {
+                data: Some(crate::ui::tests::sample_snapshot()),
+                ..Default::default()
+            },
+            drafts: Drafts::default(),
+            database: None,
+            import: None,
+        };
+        let ctx = egui::Context::default();
+        for id in [1, 999] {
+            app.apply(Action::ReviewDeletion(id), &ctx);
+            assert_eq!(app.drafts.delete_entry, None);
+        }
+        app.apply(Action::ReviewDeletion(2), &ctx);
+        assert_eq!(app.drafts.delete_entry, Some(2));
+        assert!(!app.state.saving);
+        app.apply(Action::CancelEntry, &ctx);
+        assert_eq!(app.drafts.delete_entry, None);
+        assert_eq!(app.state.data.as_ref().unwrap().sessions.len(), 5);
+        app.state.saving = true;
+        app.apply(Action::ReviewDeletion(2), &ctx);
+        assert_eq!(app.drafts.delete_entry, None);
+    }
 
     #[test]
     fn signin_moves_the_secret_once_and_cancel_blocks_browser_launch() {

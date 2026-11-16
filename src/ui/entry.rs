@@ -169,6 +169,7 @@ pub fn show(ctx: &egui::Context, state: &State, drafts: &mut Drafts, actions: &m
                 ui.label(
                     "This removes the entry from this computer. This action cannot be undone.",
                 );
+                ui.label("Synced entries also queue a deletion for the API.");
                 if let Some(problem) = &state.problem {
                     ui.colored_label(ui.visuals().warn_fg_color, problem);
                 }
